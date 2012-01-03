@@ -35,6 +35,7 @@ prog_state_s prog_state;
 
 typedef struct {
 	pid_t pid;
+	posix_spawn_file_actions_t fa;
 } job_info;
 
 extern char** environ;
@@ -44,7 +45,6 @@ int makeLogfilename(char* buf, ...) {
 }
 
 void launch_job(job_info* job, char** argv) {
-	posix_spawn_file_actions_t fa;
 	char buf[256];
 
 	if(job->pid != -1) return;
@@ -56,29 +56,29 @@ void launch_job(job_info* job, char** argv) {
 		}
 	
 
-	errno = posix_spawn_file_actions_init(&fa);
+	errno = posix_spawn_file_actions_init(&job->fa);
 	if(errno) goto spawn_error;
-	errno = posix_spawn_file_actions_addclose(&fa, 0);
-	if(errno) goto spawn_error;
-	
-	if(prog_state.buffered) {
-		errno = posix_spawn_file_actions_addclose(&fa, 1);
-		if(errno) goto spawn_error;
-		errno = posix_spawn_file_actions_addclose(&fa, 2);
-		if(errno) goto spawn_error;
-	}
-	
-	errno = posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
+	errno = posix_spawn_file_actions_addclose(&job->fa, 0);
 	if(errno) goto spawn_error;
 	
 	if(prog_state.buffered) {
-		errno = posix_spawn_file_actions_addopen(&fa, 1, buf, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		errno = posix_spawn_file_actions_addclose(&job->fa, 1);
 		if(errno) goto spawn_error;
-		errno = posix_spawn_file_actions_adddup2(&fa, 1, 2);
+		errno = posix_spawn_file_actions_addclose(&job->fa, 2);
 		if(errno) goto spawn_error;
 	}
 	
-	errno = posix_spawnp(&job->pid, argv[0], &fa, NULL, argv, environ);
+	errno = posix_spawn_file_actions_addopen(&job->fa, 0, "/dev/null", O_RDONLY, 0);
+	if(errno) goto spawn_error;
+	
+	if(prog_state.buffered) {
+		errno = posix_spawn_file_actions_addopen(&job->fa, 1, buf, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		if(errno) goto spawn_error;
+		errno = posix_spawn_file_actions_adddup2(&job->fa, 1, 2);
+		if(errno) goto spawn_error;
+	}
+	
+	errno = posix_spawnp(&job->pid, argv[0], &job->fa, NULL, argv, environ);
 	if(errno) {
 		spawn_error:
 		job->pid = -1;
@@ -119,6 +119,7 @@ reap_info reapChilds(void) {
 					//log_put(js->log_fd, VARISL(" got error "), VARII(WEXITSTATUS(retval)), VARISL(" from  "), VARIS(job->prog), NULL);
 				}
 				job->pid = -1;
+				posix_spawn_file_actions_destroy(&job->fa);
 				//job->passed = 0;
 				result.empty_slot = job;
 			} else 
