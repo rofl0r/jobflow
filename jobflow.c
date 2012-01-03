@@ -20,6 +20,7 @@ typedef struct {
 	unsigned skip;
 	int buffered;
 	sblist* job_infos;
+	sblist* subst_entries;
 	unsigned cmd_startarg;
 } prog_state_s;
 
@@ -156,7 +157,10 @@ void parse_args(int argc, char** argv) {
 	}
 
 	prog_state.cmd_startarg = 0;
+	prog_state.subst_entries = NULL;
+	
 	if(op_hasflag(op, SPL("exec"))) {
+		uint32_t subst_ent;
 		unsigned i, r = 0;
 		for(i = 1; i < (unsigned) argc; i++) {
 			if(str_equal(argv[i], "-exec")) {
@@ -164,10 +168,18 @@ void parse_args(int argc, char** argv) {
 				break;
 			}
 		}
-		if(r && r < argc) {
+		if(r && r < (unsigned) argc) {
 			prog_state.cmd_startarg = r;
 		}
+		
+		// save entries which must be substituted, to save some cycles.
+		prog_state.subst_entries = sblist_new(sizeof(uint32_t), 16);
+		for(i = r; i < (unsigned) argc; i++) {
+			subst_ent = i - r;
+			if(strstr(argv[i], "{}")) sblist_add(prog_state.subst_entries, &subst_ent);
+		}
 	}
+	
 	prog_state.buffered = 0;
 }
 
@@ -197,6 +209,7 @@ int main(int argc, char** argv) {
 	uint64_t n = 0;
 	unsigned i, j;
 	
+	
 	if(argc > 4096) argc = 4096;
 	parse_args(argc, argv);
 	if(prog_state.cmd_startarg) {
@@ -220,23 +233,26 @@ int main(int argc, char** argv) {
 				stringptr_chomp(line);
 				
 				max_subst = 0;
-				for(i = 1; i < argc - prog_state.cmd_startarg; i++) {
-					p = argv[i + prog_state.cmd_startarg];
-					if((strstr_result = strstr(p, "{}"))) {
-						j = 0;
-						j = strstr_result - p;
-						if(j) memcpy(subst_buf[max_subst], p, j);
-						strncpy(&subst_buf[max_subst][j], line->ptr, 4096 - j);
-						j += line->size;
-						if(j > 4096) {
-							fprintf(stderr, "fatal: line to long for substitution: %s\n", line->ptr);
-							goto out;
+				if(prog_state.subst_entries) {
+					uint32_t* index;
+					sblist_iter(prog_state.subst_entries, index) {
+						p = argv[*index + prog_state.cmd_startarg];
+						if((strstr_result = strstr(p, "{}"))) {
+							j = 0;
+							j = strstr_result - p;
+							if(j) memcpy(subst_buf[max_subst], p, j);
+							strncpy(&subst_buf[max_subst][j], line->ptr, 4096 - j);
+							j += line->size;
+							if(j > 4096) {
+								fprintf(stderr, "fatal: line too long for substitution: %s\n", line->ptr);
+								goto out;
+							}
+							strncpy(&subst_buf[max_subst][j], strstr_result + 2, 4096 - j);
+							
+							cmd_argv[*index] = subst_buf[max_subst];
+							max_subst++;
+							if(max_subst >= 16) die("too many substitutions!\n");
 						}
-						strncpy(&subst_buf[max_subst][j], strstr_result + 2, 4096 - j);
-						
-						cmd_argv[i] = subst_buf[max_subst];
-						max_subst++;
-						if(max_subst >= 16) die("too many substitutions!\n");
 					}
 				}
 				
@@ -264,6 +280,9 @@ int main(int argc, char** argv) {
 		if(ri.threads_running) msleep(SLEEP_MS);
 		
 	} while(ri.threads_running);
+	
+	if(prog_state.subst_entries) sblist_free(prog_state.subst_entries);
+	if(prog_state.job_infos) sblist_free(prog_state.job_infos);
 	
 	return 0;
 }
