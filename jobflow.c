@@ -190,6 +190,7 @@ void init_queue(void) {
 	job_info ji;
 	
 	ji.pid = -1;
+	memset(&ji.fa, 0, sizeof(ji.fa));
 	
 	for(i = 0; i < prog_state.numthreads; i++) {
 		sblist_add(prog_state.job_infos, &ji);
