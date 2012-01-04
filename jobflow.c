@@ -12,20 +12,12 @@
 #include <stddef.h>
 #include <errno.h>
 
-#define SLEEP_MS 12
+/* defines the amount of milliseconds to sleep between each call to the reaper, 
+ * once all free slots are exhausted */
+#define SLEEP_MS 21
 
-typedef struct {
-	unsigned numthreads;
-	unsigned threads_running;
-	char* statefile;
-	unsigned skip;
-	int buffered;
-	sblist* job_infos;
-	sblist* subst_entries;
-	unsigned cmd_startarg;
-} prog_state_s;
-
-prog_state_s prog_state;
+/* defines after how many milliseconds a reap of the running processes is obligatory. */
+#define REAP_INTERVAL_MS 100
 
 /* process handling */
 
@@ -38,6 +30,25 @@ typedef struct {
 	pid_t pid;
 	posix_spawn_file_actions_t fa;
 } job_info;
+
+/* defines how many slots our free_slots struct can take */
+#define MAX_SLOTS 64
+
+typedef struct {
+	unsigned numthreads;
+	unsigned threads_running;
+	char* statefile;
+	unsigned skip;
+	int buffered;
+	sblist* job_infos;
+	sblist* subst_entries;
+	unsigned cmd_startarg;
+	job_info* free_slots[MAX_SLOTS];
+	unsigned free_slots_count;
+} prog_state_s;
+
+prog_state_s prog_state;
+
 
 extern char** environ;
 
@@ -89,19 +100,20 @@ void launch_job(job_info* job, char** argv) {
 	}
 }
 
-typedef struct {
-	job_info* empty_slot;
-} reap_info;
+static void addJobSlot(job_info* job) {
+	if(prog_state.free_slots_count < MAX_SLOTS) {
+		prog_state.free_slots[prog_state.free_slots_count] = job;
+		prog_state.free_slots_count++;
+	}
+}
 
 /* reap childs and return pointer to a free "slot" or NULL */
-reap_info reapChilds(void) {
+void reapChilds(void) {
 	size_t i;
 	job_info* job;
 	int ret, retval;
 	
-	reap_info result;
-	
-	result.empty_slot = NULL;
+	prog_state.free_slots_count = 0;
 	
 	for(i = 0; i < sblist_getsize(prog_state.job_infos); i++) {
 		job = sblist_get(prog_state.job_infos, i);
@@ -122,14 +134,12 @@ reap_info reapChilds(void) {
 				job->pid = -1;
 				posix_spawn_file_actions_destroy(&job->fa);
 				//job->passed = 0;
-				result.empty_slot = job;
+				addJobSlot(job);
 				prog_state.threads_running--;
 			}
 		} else 
-			result.empty_slot = job;
+			addJobSlot(job);
 	}
-	
-	return result;
 }
 
 
@@ -207,7 +217,7 @@ int main(int argc, char** argv) {
 	char numbuf[64];
 	stringptr num_b, *num = &num_b;
 	
-	reap_info ri;
+	struct timeval reapTime;
 	
 	uint64_t n = 0;
 	unsigned i, j;
@@ -215,6 +225,8 @@ int main(int argc, char** argv) {
 	
 	if(argc > 4096) argc = 4096;
 	prog_state.threads_running = 0;
+	prog_state.free_slots_count = 0;
+	gettimestamp(&reapTime);
 
 	parse_args(argc, argv);
 	if(prog_state.cmd_startarg) {
@@ -261,13 +273,14 @@ int main(int argc, char** argv) {
 					}
 				}
 				
-				do {
-					ri = reapChilds();
-					if(!ri.empty_slot) msleep(SLEEP_MS);
-					
-				} while(!ri.empty_slot);
+				while(prog_state.free_slots_count == 0 || mspassed(&reapTime) > REAP_INTERVAL_MS) {
+					reapChilds();
+					gettimestamp(&reapTime);
+					if(!prog_state.free_slots_count) msleep(SLEEP_MS);
+				}
 				
-				launch_job(ri.empty_slot, cmd_argv);
+				launch_job(prog_state.free_slots[prog_state.free_slots_count-1], cmd_argv);
+				prog_state.free_slots_count--;
 				
 				if(prog_state.statefile) {
 					num_b.ptr = uint64ToString(n + 1, numbuf);
@@ -280,11 +293,10 @@ int main(int argc, char** argv) {
 	}
 	
 	out:
-	do {
-		ri = reapChilds();
+	while(prog_state.threads_running) {
+		reapChilds();
 		if(prog_state.threads_running) msleep(SLEEP_MS);
-		
-	} while(prog_state.threads_running);
+	}
 	
 	if(prog_state.subst_entries) sblist_free(prog_state.subst_entries);
 	if(prog_state.job_infos) sblist_free(prog_state.job_infos);
