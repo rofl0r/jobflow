@@ -40,13 +40,18 @@ typedef struct {
 	unsigned threads_running;
 	char* statefile;
 	unsigned skip;
-	int buffered;
 	sblist* job_infos;
 	sblist* subst_entries;
 	unsigned cmd_startarg;
 	job_info* free_slots[MAX_SLOTS];
 	unsigned free_slots_count;
 	char* tempdir;
+	int buffered:1; /* write stdout and stderr of each task into a file, 
+			and print it to stdout once the process ends. 
+			this prevents mixing up of the output of multiple tasks. */
+	int delayedflush:1; /* only write to statefile whenever all processes are busy, and at program end.
+			   this means faster program execution, but could also be imprecise if the number of 
+			   jobs is small or smaller than the available threadcount / MAX_SLOTS. */
 } prog_state_s;
 
 prog_state_s prog_state;
@@ -169,6 +174,12 @@ void parse_args(int argc, char** argv) {
 			prog_state.skip = atoi(fc->ptr);
 		}
 	}
+	
+	prog_state.delayedflush = 0;
+	if(op_hasflag(op, SPL("delayedflush"))) {
+		if(!prog_state.statefile) die("-delayedflush needs -statefile\n");
+		prog_state.delayedflush = 1;
+	}
 
 	prog_state.cmd_startarg = 0;
 	prog_state.subst_entries = NULL;
@@ -209,15 +220,23 @@ void init_queue(void) {
 	}
 }
 
+void write_statefile(uint64_t n, const char* tempfile) {
+	char numbuf[64];
+	stringptr num_b, *num = &num_b;
+
+	num_b.ptr = uint64ToString(n + 1, numbuf);
+	num_b.size = strlen(numbuf);
+	stringptr_tofile((char*) tempfile, num);
+	if(rename(tempfile, prog_state.statefile) == -1)
+		perror("rename");
+}
+
 int main(int argc, char** argv) {
 	char inbuf[4096]; char* fgets_result, *strstr_result, *p;
 	stringptr line_b, *line = &line_b;
 	char* cmd_argv[4096];
 	char subst_buf[4096][16];
 	unsigned max_subst;
-	
-	char numbuf[64];
-	stringptr num_b, *num = &num_b;
 	
 	struct timeval reapTime;
 	
@@ -300,12 +319,8 @@ int main(int argc, char** argv) {
 				launch_job(prog_state.free_slots[prog_state.free_slots_count-1], cmd_argv);
 				prog_state.free_slots_count--;
 				
-				if(prog_state.statefile) {
-					num_b.ptr = uint64ToString(n + 1, numbuf);
-					num_b.size = strlen(numbuf);
-					stringptr_tofile(temp_state, num);
-					if(rename(temp_state, prog_state.statefile) == -1)
-						perror("rename");
+				if(prog_state.statefile && (prog_state.delayedflush == 0 || prog_state.free_slots_count == 0)) {
+					write_statefile(n, temp_state);
 				}
 			}
 		}
@@ -313,6 +328,10 @@ int main(int argc, char** argv) {
 	}
 	
 	out:
+	
+	if(prog_state.delayedflush)
+		write_statefile(n, temp_state);
+	
 	while(prog_state.threads_running) {
 		reapChilds();
 		if(prog_state.threads_running) msleep(SLEEP_MS);
