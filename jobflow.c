@@ -4,6 +4,7 @@
 #include "../lib/include/sblist.h"
 #include "../lib/include/strlib.h"
 #include "../lib/include/timelib.h"
+#include "../lib/include/filelib.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +46,7 @@ typedef struct {
 	unsigned cmd_startarg;
 	job_info* free_slots[MAX_SLOTS];
 	unsigned free_slots_count;
+	char* tempdir;
 } prog_state_s;
 
 prog_state_s prog_state;
@@ -222,13 +224,29 @@ int main(int argc, char** argv) {
 	uint64_t n = 0;
 	unsigned i, j;
 	
+	char tempdir_buf[256];
+	char temp_state[256];
 	
 	if(argc > 4096) argc = 4096;
 	prog_state.threads_running = 0;
 	prog_state.free_slots_count = 0;
 	gettimestamp(&reapTime);
-
+	
 	parse_args(argc, argv);
+	
+	if(prog_state.statefile)
+		ulz_snprintf(temp_state, sizeof(temp_state), "%s.%u", prog_state.statefile, (unsigned) getpid());
+	
+	prog_state.tempdir = NULL;
+	
+	if(prog_state.buffered) {
+		prog_state.tempdir = tempdir_buf;
+		if(mktempdir("jobflow", tempdir_buf, sizeof(tempdir_buf)) == 0) {
+			perror("mkdtemp");
+			die("could not create tempdir\n");
+		}
+	}
+	
 	if(prog_state.cmd_startarg) {
 		for(i = prog_state.cmd_startarg; i < (unsigned) argc; i++) {
 			cmd_argv[i - prog_state.cmd_startarg] = argv[i];
@@ -285,7 +303,9 @@ int main(int argc, char** argv) {
 				if(prog_state.statefile) {
 					num_b.ptr = uint64ToString(n + 1, numbuf);
 					num_b.size = strlen(numbuf);
-					stringptr_tofile(prog_state.statefile, num);
+					stringptr_tofile(temp_state, num);
+					if(rename(temp_state, prog_state.statefile) == -1)
+						perror("rename");
 				}
 			}
 		}
@@ -300,6 +320,9 @@ int main(int argc, char** argv) {
 	
 	if(prog_state.subst_entries) sblist_free(prog_state.subst_entries);
 	if(prog_state.job_infos) sblist_free(prog_state.job_infos);
+	
+	if(prog_state.tempdir) 
+		rmdir(prog_state.tempdir);
 	
 	return 0;
 }
