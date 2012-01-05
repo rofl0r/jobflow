@@ -330,7 +330,7 @@ int main(int argc, char** argv) {
 	out:
 	
 	if(prog_state.delayedflush)
-		write_statefile(n, temp_state);
+		write_statefile(n - 1, temp_state);
 	
 	while(prog_state.threads_running) {
 		reapChilds();
