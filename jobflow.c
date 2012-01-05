@@ -32,7 +32,7 @@ typedef struct {
 } job_info;
 
 /* defines how many slots our free_slots struct can take */
-#define MAX_SLOTS 64
+#define MAX_SLOTS 128
 
 typedef struct {
 	unsigned numthreads;
