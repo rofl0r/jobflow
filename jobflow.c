@@ -49,7 +49,7 @@ typedef struct {
 	sblist* job_infos;
 	sblist* subst_entries;
 	unsigned cmd_startarg;
-	job_info* free_slots[MAX_SLOTS];
+	size_t free_slots[MAX_SLOTS];
 	unsigned free_slots_count;
 	char* tempdir;
 	int delayedspinup_interval; /* use a random delay until the queue gets filled for the first time.
@@ -60,6 +60,7 @@ typedef struct {
 	int delayedflush:1; /* only write to statefile whenever all processes are busy, and at program end.
 			   this means faster program execution, but could also be imprecise if the number of 
 			   jobs is small or smaller than the available threadcount / MAX_SLOTS. */
+	int join_output:1; /* join stdout and stderr of launched jobs into stdout */
 } prog_state_s;
 
 prog_state_s prog_state;
@@ -67,21 +68,24 @@ prog_state_s prog_state;
 
 extern char** environ;
 
-int makeLogfilename(char* buf, ...) {
-	return 0;
+int makeLogfilename(char* buf, size_t bufsize, size_t jobindex, int is_stderr) {
+	return snprintf(buf, bufsize, is_stderr ? "%s/jd_proc_%.5u_stdout.log" : "%s/jd_proc_%.5u_stderr.log", prog_state.tempdir, (unsigned) jobindex) < bufsize;
 }
 
-void launch_job(job_info* job, char** argv) {
-	char buf[256];
+void launch_job(size_t jobindex, char** argv) {
+	char stdout_filename_buf[256];
+	char stderr_filename_buf[256];
+	job_info* job = sblist_get(prog_state.job_infos, jobindex);
 
 	if(job->pid != -1) return;
 	
-	if(prog_state.buffered)
-		if(!makeLogfilename(buf, sizeof(buf), argv[0])) {
-			fprintf(stderr, " filename too long: %s\n", argv[0]);
+	if(prog_state.buffered) {
+		if((!makeLogfilename(stdout_filename_buf, sizeof(stdout_filename_buf), jobindex, 0)) ||
+		   ((!prog_state.join_output) && !makeLogfilename(stderr_filename_buf, sizeof(stderr_filename_buf), jobindex, 1)) ) {
+			fprintf(stderr, "temp filename too long!\n");
 			return;
 		}
-	
+	}
 
 	errno = posix_spawn_file_actions_init(&job->fa);
 	if(errno) goto spawn_error;
@@ -99,9 +103,12 @@ void launch_job(job_info* job, char** argv) {
 	if(errno) goto spawn_error;
 	
 	if(prog_state.buffered) {
-		errno = posix_spawn_file_actions_addopen(&job->fa, 1, buf, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		errno = posix_spawn_file_actions_addopen(&job->fa, 1, stdout_filename_buf, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if(errno) goto spawn_error;
-		errno = posix_spawn_file_actions_adddup2(&job->fa, 1, 2);
+		if(prog_state.join_output)
+			errno = posix_spawn_file_actions_adddup2(&job->fa, 1, 2);
+		else 
+			errno = posix_spawn_file_actions_addopen(&job->fa, 2, stderr_filename_buf, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if(errno) goto spawn_error;
 	}
 	
@@ -115,11 +122,32 @@ void launch_job(job_info* job, char** argv) {
 	}
 }
 
-static void addJobSlot(job_info* job) {
+static void addJobSlot(size_t job_id) {
 	if(prog_state.free_slots_count < MAX_SLOTS) {
-		prog_state.free_slots[prog_state.free_slots_count] = job;
+		prog_state.free_slots[prog_state.free_slots_count] = job_id;
 		prog_state.free_slots_count++;
 	}
+}
+
+static void dump_output(size_t job_id, int is_stderr) {
+	char out_filename_buf[256];
+	char buf[4096];
+	FILE* dst, *out_stream = is_stderr ? stderr : stdout;
+	size_t nread;
+	
+	makeLogfilename(out_filename_buf, sizeof(out_filename_buf), job_id, is_stderr);
+	
+	fprintf(stdout, "dump %u %d -> %s\n", (unsigned) job_id, is_stderr, out_filename_buf);
+	
+	dst = fopen(out_filename_buf, "r");
+	while(dst && (nread = fread(buf, 1, sizeof(buf), dst))) {
+		fwrite(buf, 1, nread, out_stream);
+		if(nread < sizeof(buf)) break;
+	}
+	if(dst) 
+		fclose(dst);
+	
+	fflush(out_stream);
 }
 
 /* reap childs and return pointer to a free "slot" or NULL */
@@ -149,11 +177,18 @@ void reapChilds(void) {
 				job->pid = -1;
 				posix_spawn_file_actions_destroy(&job->fa);
 				//job->passed = 0;
-				addJobSlot(job);
+				addJobSlot(i);
 				prog_state.threads_running--;
+				
+				if(prog_state.buffered) {
+					dump_output(i, 0);
+					if(!prog_state.join_output)
+						dump_output(i, 1);
+				}
+				
 			}
 		} else 
-			addJobSlot(job);
+			addJobSlot(i);
 	}
 }
 
@@ -217,6 +252,16 @@ void parse_args(int argc, char** argv) {
 	}
 	
 	prog_state.buffered = 0;
+	if(op_hasflag(op, SPL("buffered"))) {
+		prog_state.buffered = 1;
+	}
+	
+	prog_state.join_output = 0;
+	if(op_hasflag(op, SPL("joinoutput"))) {
+		if(!prog_state.buffered) die("-joinoutput needs -buffered\n");
+		prog_state.join_output = 1;
+	}
+	
 }
 
 void init_queue(void) {
