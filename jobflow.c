@@ -1,3 +1,8 @@
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#undef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
+
 #include "../lib/include/optparser.h"
 #include "../lib/include/stringptr.h"
 #include "../lib/include/stringptrlist.h"
@@ -12,6 +17,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <errno.h>
+#include <time.h>
 
 /* defines the amount of milliseconds to sleep between each call to the reaper, 
  * once all free slots are exhausted */
@@ -46,6 +52,8 @@ typedef struct {
 	job_info* free_slots[MAX_SLOTS];
 	unsigned free_slots_count;
 	char* tempdir;
+	int delayedspinup_interval; /* use a random delay until the queue gets filled for the first time.
+				the top value in ms can be supplied via a command line switch */
 	int buffered:1; /* write stdout and stderr of each task into a file, 
 			and print it to stdout once the process ends. 
 			this prevents mixing up of the output of multiple tasks. */
@@ -180,6 +188,9 @@ void parse_args(int argc, char** argv) {
 		if(!prog_state.statefile) die("-delayedflush needs -statefile\n");
 		prog_state.delayedflush = 1;
 	}
+	
+	op_temp = op_get(op, SPL("delayedspinup"));
+	prog_state.delayedspinup_interval = op_temp ? atoi(op_temp) : 0;
 
 	prog_state.cmd_startarg = 0;
 	prog_state.subst_entries = NULL;
@@ -245,6 +256,8 @@ int main(int argc, char** argv) {
 	
 	char tempdir_buf[256];
 	char temp_state[256];
+	
+	srand(time(NULL));
 	
 	if(argc > 4096) argc = 4096;
 	prog_state.threads_running = 0;
@@ -315,6 +328,9 @@ int main(int argc, char** argv) {
 					gettimestamp(&reapTime);
 					if(!prog_state.free_slots_count) msleep(SLEEP_MS);
 				}
+				
+				if(prog_state.delayedspinup_interval && n < prog_state.numthreads)
+					msleep(rand() % (prog_state.delayedspinup_interval + 1));
 				
 				launch_job(prog_state.free_slots[prog_state.free_slots_count-1], cmd_argv);
 				prog_state.free_slots_count--;
