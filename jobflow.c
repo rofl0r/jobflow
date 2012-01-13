@@ -53,7 +53,12 @@ typedef struct {
 	unsigned free_slots_count;
 	char* tempdir;
 	int delayedspinup_interval; /* use a random delay until the queue gets filled for the first time.
-				the top value in ms can be supplied via a command line switch */
+				the top value in ms can be supplied via a command line switch.
+				this option makes only sense if the interval is somewhat smaller than the 
+				expected runtime of the average job.
+				this option is useful to not overload a network app due to hundreds of 
+				parallel connection tries on startup.
+				*/
 	int buffered:1; /* write stdout and stderr of each task into a file, 
 			and print it to stdout once the process ends. 
 			this prevents mixing up of the output of multiple tasks. */
@@ -296,6 +301,7 @@ int main(int argc, char** argv) {
 	
 	uint64_t n = 0;
 	unsigned i, j;
+	unsigned spinup_counter = 0;
 	
 	char tempdir_buf[256];
 	char temp_state[256];
@@ -372,8 +378,10 @@ int main(int argc, char** argv) {
 					if(!prog_state.free_slots_count) msleep(SLEEP_MS);
 				}
 				
-				if(prog_state.delayedspinup_interval && n < prog_state.numthreads)
+				if(prog_state.delayedspinup_interval && spinup_counter < (prog_state.numthreads * 2)) {
 					msleep(rand() % (prog_state.delayedspinup_interval + 1));
+					spinup_counter++;
+				}
 				
 				launch_job(prog_state.free_slots[prog_state.free_slots_count-1], cmd_argv);
 				prog_state.free_slots_count--;
