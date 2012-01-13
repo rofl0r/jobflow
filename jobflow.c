@@ -137,8 +137,6 @@ static void dump_output(size_t job_id, int is_stderr) {
 	
 	makeLogfilename(out_filename_buf, sizeof(out_filename_buf), job_id, is_stderr);
 	
-	fprintf(stdout, "dump %u %d -> %s\n", (unsigned) job_id, is_stderr, out_filename_buf);
-	
 	dst = fopen(out_filename_buf, "r");
 	while(dst && (nread = fread(buf, 1, sizeof(buf), dst))) {
 		fwrite(buf, 1, nread, out_stream);
