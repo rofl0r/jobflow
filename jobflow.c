@@ -44,7 +44,7 @@
 #include <errno.h>
 static int prlimit(int pid, ...) {
 	(void) pid;
-	fprintf(stderr, "prlimit() not implemented on this sys :/");
+	fprintf(stderr, "prlimit() not implemented on this system");
 	errno = EINVAL;
 	return -1;
 }
@@ -258,10 +258,62 @@ static long parse_human_number(stringptr* num) {
 	return ret;
 }
 
-static void parse_args(int argc, char** argv) {
+static int syntax(void) {
+	puts(   
+		"jobflow (C) rofl0r\n"
+		"------------------\n"
+		"this program is intended to be used as a recipient of another programs output\n"
+		"it launches processes to which the current line can be passed as an argument\n"
+		"using {} for substitution (as in find -exec).\n"
+		"\n"
+		"available options:\n\n"
+		"-skip=XXX -threads=XXX -resume -statefile=/tmp/state -delayedflush\n"
+		"-delayedspinup=XXX -buffered -joinoutput -limits=mem=16M,cpu=10\n"
+		"-exec ./mycommand {}\n"
+		"\n"
+		"-skip=XXX\n"
+		"    XXX=number of entries to skip\n"
+		"-threads=XXX\n"
+		"    XXX=number of parallel processes to spawn]\n"
+		"-resume\n"
+		"    resume from last jobnumber stored in statefile\n"
+		"-statefile=XXX\n"
+		"    XXX=filename\n"
+		"    saves last launched jobnumber into a file\n"
+		"-delayedflush\n"
+		"    only write to statefile whenever all processes are busy,\n"
+		"    and at program end\n"
+		"-delayedspinup=XXX\n"
+		"    XXX=maximum amount of milliseconds\n"
+		"    ...to wait when spinning up a fresh set of processes\n"
+		"    a random value between 0 and the chosen amount is used to delay initial\n"
+		"    spinup.\n"
+		"    this can be handy to circumvent an I/O lockdown because of a burst of \n"
+		"    activity on program startup\n"
+		"-buffered\n"
+		"    store the stdout and stderr of launched processes into a temporary file\n"
+		"    which will be printed after a process has finished.\n"
+		"    this prevents mixing up of output of different processes.\n"
+		"-joinoutput\n"
+		"    if -buffered, write both stdout and stderr into the same file.\n"
+		"    this saves the chronological order of the output, and the combined output\n"
+		"    will only be printed to stdout.\n"
+		"-limits=[mem=XXX,cpu=XXX,stack=XXX,fsize=XXX,nofiles=XXX]\n"
+		"    sets the rlimit of the new created processes.\n"
+		"    see \"man setrlimit\" for an explanation. the suffixes G/M/K are detected.\n"
+		"-exec command with args\n"
+		"    everything past -exec is treated as the command to execute on each line of\n"
+		"    stdin received. the line can be passed as an argument using {}."
+	);
+	return 1;
+}
+
+static int parse_args(int argc, char** argv) {
 	op_state op_b, *op = &op_b;
 	op_init(op, argc, argv);
 	char *op_temp;
+	if(argc == 1 || op_hasflag(op, SPL("-help")))
+		return syntax();
 	op_temp = op_get(op, SPL("threads"));
 	prog_state.numthreads = op_temp ? atoi(op_temp) : 1;
 	op_temp = op_get(op, SPL("statefile"));
@@ -345,6 +397,8 @@ static void parse_args(int argc, char** argv) {
 					lim.limit = RLIMIT_STACK;
 				else if(EQ(key, SPL("fsize")))
 					lim.limit = RLIMIT_FSIZE;
+				else if(EQ(key, SPL("nofiles")))
+					lim.limit = RLIMIT_NOFILE;
 				else 
 					die("unknown option passed to -limits");
 				
@@ -359,7 +413,7 @@ static void parse_args(int argc, char** argv) {
 			stringptrlist_free(limit_list);
 		}
 	}
-	
+	return 0;
 }
 
 static void init_queue(void) {
@@ -408,7 +462,7 @@ int main(int argc, char** argv) {
 	prog_state.free_slots_count = 0;
 	gettimestamp(&reapTime);
 	
-	parse_args(argc, argv);
+	if(parse_args(argc, argv)) return 1;
 	
 	if(prog_state.statefile)
 		ulz_snprintf(temp_state, sizeof(temp_state), "%s.%u", prog_state.statefile, (unsigned) getpid());
