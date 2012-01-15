@@ -2,6 +2,8 @@
 #define _POSIX_C_SOURCE 200809L
 #undef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 700
+#undef _GNU_SOURCE
+#define _GNU_SOURCE
 
 #include "../lib/include/optparser.h"
 #include "../lib/include/stringptr.h"
@@ -33,10 +35,33 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 
+#include <sys/resource.h>
+
+#if defined(__GLIBC__) && (__GLIBC__ < 3) && (__GLIBC_MINOR__ < 13)
+/* http://repo.or.cz/w/glibc.git/commitdiff/c08fb0d7bba4015078406b28d3906ccc5fda9d5a ,
+ * http://repo.or.cz/w/glibc.git/commitdiff/052fa7b33ef5deeb4987e5264cf397b3161d8a01 */
+#warning to use prlimit() you have to use musl libc 0.8.4+ or glibc 2.13+
+#include <errno.h>
+static int prlimit(int pid, ...) {
+	(void) pid;
+	fprintf(stderr, "prlimit() not implemented on this sys :/");
+	errno = EINVAL;
+	return -1;
+}
+#endif
+
+
+#include <sys/time.h>
+
 typedef struct {
 	pid_t pid;
 	posix_spawn_file_actions_t fa;
 } job_info;
+
+typedef struct {
+	int limit;
+	struct rlimit rl;
+} limit_rec;
 
 /* defines how many slots our free_slots struct can take */
 #define MAX_SLOTS 128
@@ -48,6 +73,7 @@ typedef struct {
 	unsigned skip;
 	sblist* job_infos;
 	sblist* subst_entries;
+	sblist* limits;
 	unsigned cmd_startarg;
 	size_t free_slots[MAX_SLOTS];
 	unsigned free_slots_count;
@@ -124,6 +150,13 @@ void launch_job(size_t jobindex, char** argv) {
 		perror("posix_spawn");
 	} else {
 		prog_state.threads_running++;
+		if(prog_state.limits) {
+			limit_rec* limit;
+			sblist_iter(prog_state.limits, limit) {
+				if(prlimit(job->pid, limit->limit, &limit->rl, NULL) == -1)
+					perror("prlimit");
+			}
+		}
 	}
 }
 
@@ -154,7 +187,7 @@ static void dump_output(size_t job_id, int is_stderr) {
 }
 
 /* reap childs and return pointer to a free "slot" or NULL */
-void reapChilds(void) {
+static void reapChilds(void) {
 	size_t i;
 	job_info* job;
 	int ret, retval;
@@ -197,12 +230,32 @@ void reapChilds(void) {
 
 
 __attribute__((noreturn))
-void die(const char* msg) {
+static void die(const char* msg) {
 	fprintf(stderr, msg);
 	exit(1);
 }
 
-void parse_args(int argc, char** argv) {
+static long parse_human_number(stringptr* num) {
+	long ret = 0;
+	char buf[64];
+	if(num && num->size && num->size < sizeof(buf)) {
+		if(num->ptr[num->size -1] == 'G')
+			ret = 1024 * 1024 * 1024;
+		else if(num->ptr[num->size -1] == 'M')
+			ret = 1024 * 1024;
+		else if(num->ptr[num->size -1] == 'K')
+			ret = 1024;
+		if(ret) {
+			memcpy(buf, num->ptr, num->size);
+			buf[num->size] = 0;
+			return atol(buf) * ret;
+		}
+		return atol(num->ptr);
+	}
+	return ret;
+}
+
+static void parse_args(int argc, char** argv) {
 	op_state op_b, *op = &op_b;
 	op_init(op, argc, argv);
 	char *op_temp;
@@ -265,9 +318,48 @@ void parse_args(int argc, char** argv) {
 		prog_state.join_output = 1;
 	}
 	
+	prog_state.limits = NULL;
+	op_temp = op_get(op, SPL("limits"));
+	if(op_temp) {
+		unsigned i;
+		SPDECLAREC(limits, op_temp);
+		stringptrlist* limit_list = stringptr_splitc(limits, ',');
+		stringptrlist* kv;
+		stringptr* key, *value;
+		limit_rec lim;
+		if(stringptrlist_getsize(limit_list)) {
+			prog_state.limits = sblist_new(sizeof(limit_rec), stringptrlist_getsize(limit_list));
+			for(i = 0; i < stringptrlist_getsize(limit_list); i++) {
+				kv = stringptr_splitc(stringptrlist_get(limit_list, i), '=');
+				if(stringptrlist_getsize(kv) != 2) continue;
+				key = stringptrlist_get(kv, 0);
+				value = stringptrlist_get(kv, 1);
+				if(EQ(key, SPL("mem")))
+					lim.limit = RLIMIT_AS;
+				else if(EQ(key, SPL("cpu")))
+					lim.limit = RLIMIT_CPU;
+				else if(EQ(key, SPL("stack")))
+					lim.limit = RLIMIT_STACK;
+				else if(EQ(key, SPL("fsize")))
+					lim.limit = RLIMIT_FSIZE;
+				else 
+					die("unknown option passed to -limits");
+				
+				if(getrlimit(lim.limit, &lim.rl) == -1) {
+					perror("getrlimit");
+					die("could not query rlimits");
+				}
+				lim.rl.rlim_cur = parse_human_number(value);
+				sblist_add(prog_state.limits, &lim);
+				stringptrlist_free(kv);
+			}
+			stringptrlist_free(limit_list);
+		}
+	}
+	
 }
 
-void init_queue(void) {
+static void init_queue(void) {
 	unsigned i;
 	job_info ji;
 	
@@ -279,7 +371,7 @@ void init_queue(void) {
 	}
 }
 
-void write_statefile(uint64_t n, const char* tempfile) {
+static void write_statefile(uint64_t n, const char* tempfile) {
 	char numbuf[64];
 	stringptr num_b, *num = &num_b;
 
@@ -406,6 +498,7 @@ int main(int argc, char** argv) {
 	
 	if(prog_state.subst_entries) sblist_free(prog_state.subst_entries);
 	if(prog_state.job_infos) sblist_free(prog_state.job_infos);
+	if(prog_state.limits) sblist_free(prog_state.limits);
 	
 	if(prog_state.tempdir) 
 		rmdir(prog_state.tempdir);
