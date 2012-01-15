@@ -44,7 +44,7 @@
 #include <errno.h>
 static int prlimit(int pid, ...) {
 	(void) pid;
-	fprintf(stderr, "prlimit() not implemented on this system");
+	fprintf(stderr, "prlimit() not implemented on this system\n");
 	errno = EINVAL;
 	return -1;
 }
