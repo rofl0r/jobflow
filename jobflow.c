@@ -224,7 +224,6 @@ static void reapChilds(void) {
 					if(!prog_state.join_output)
 						dump_output(i, 1);
 				}
-				
 			}
 		} else 
 			addJobSlot(i);
@@ -559,6 +558,11 @@ int main(int argc, char** argv) {
 	
 	if(prog_state.tempdir) 
 		rmdir(prog_state.tempdir);
+	
+
+	fflush(stdout);
+	fflush(stderr);
+	
 	
 	return 0;
 }
