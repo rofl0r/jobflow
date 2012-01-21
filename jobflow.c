@@ -321,6 +321,8 @@ static int syntax(void) {
 		"    everything past -exec is treated as the command to execute on each line of\n"
 		"    stdin received. the line can be passed as an argument using {}.\n"
 		"    {.} passes everything before the last dot in a line as an argument.\n"
+		"    it is possible to use multiple substitutions inside a single argument,\n"
+		"    but currently only of one type.\n"
 	);
 	return 1;
 }
@@ -456,24 +458,29 @@ static void write_statefile(uint64_t n, const char* tempfile) {
 		perror("rename");
 }
 
-// returns 0 if no substitution took place, 1 if successful, -1 on out of buffer.
-// parameters "source" and "what" have to be zero-terminated
-int substitute(char* dest, size_t dest_size, stringptr* source, stringptr* what, stringptr* whit) {
-	char* strstr_result;
-	size_t len;
-	if(!(source->size) || (source->size < what->size) || (!(strstr_result = strstr(source->ptr, what->ptr)))) return 0;
-	if(dest_size < (source->size - what->size) + whit->size + 1) return -1;
-	len = strstr_result - source->ptr;
-	memcpy(dest, source->ptr, len);
-	dest += len;
-	memcpy(dest, whit->ptr, whit->size);
-	dest += whit->size;
-	if((dest_size = source->size - len - what->size)) {
-		memcpy(dest, source->ptr + len + what->size, dest_size);
-		dest += dest_size;
+// returns numbers of substitutions done, -1 on out of buffer.
+// dest is always overwritten. if not substitutions were done, it contains a copy of source.
+int substitute_all(char* dest, ssize_t dest_size, stringptr* source, stringptr* what, stringptr* whit) {
+	size_t i;
+	int ret = 0;
+	for(i = 0; dest_size > 0 && i < source->size; ) {
+		if(stringptr_here(source, i, what)) {
+			if(dest_size < (ssize_t) whit->size) return -1;
+			memcpy(dest, whit->ptr, whit->size);
+			dest += whit->size;
+			dest_size -= whit->size;
+			ret++;
+			i += what->size;
+		} else {
+			*dest = source->ptr[i];
+			dest++;
+			dest_size--;
+			i++;
+		}
 	}
+	if(!dest_size) return -1;
 	*dest = 0;
-	return 1;
+	return ret;
 }
 
 int main(int argc, char** argv) {
@@ -540,7 +547,7 @@ int main(int argc, char** argv) {
 					sblist_iter(prog_state.subst_entries, index) {
 						SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
 						int ret;
-						ret = substitute(subst_buf[max_subst], 4096, source, SPL("{}"), line);
+						ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
 						if(ret == -1) {
 							too_long:
 							fprintf(stderr, "fatal: line too long for substitution: %s\n", line->ptr);
@@ -549,7 +556,7 @@ int main(int argc, char** argv) {
 							char* lastdot = stringptr_rchr(line, '.');
 							stringptr tilLastDot = *line;
 							if(lastdot) tilLastDot.size = lastdot - line->ptr;
-							ret = substitute(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
+							ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
 							if(ret == -1) goto too_long;
 						}
 						if(ret) {
