@@ -319,7 +319,8 @@ static int syntax(void) {
 		"    see \"man setrlimit\" for an explanation. the suffixes G/M/K are detected.\n"
 		"-exec command with args\n"
 		"    everything past -exec is treated as the command to execute on each line of\n"
-		"    stdin received. the line can be passed as an argument using {}."
+		"    stdin received. the line can be passed as an argument using {}.\n"
+		"    {.} passes everything before the last dot in a line as an argument.\n"
 	);
 	return 1;
 }
@@ -374,7 +375,7 @@ static int parse_args(int argc, char** argv) {
 		prog_state.subst_entries = sblist_new(sizeof(uint32_t), 16);
 		for(i = r; i < (unsigned) argc; i++) {
 			subst_ent = i - r;
-			if(strstr(argv[i], "{}")) sblist_add(prog_state.subst_entries, &subst_ent);
+			if(strstr(argv[i], "{}") || strstr(argv[i], "{.}")) sblist_add(prog_state.subst_entries, &subst_ent);
 		}
 	}
 	
@@ -455,17 +456,37 @@ static void write_statefile(uint64_t n, const char* tempfile) {
 		perror("rename");
 }
 
+// returns 0 if no substitution took place, 1 if successful, -1 on out of buffer.
+// parameters "source" and "what" have to be zero-terminated
+int substitute(char* dest, size_t dest_size, stringptr* source, stringptr* what, stringptr* whit) {
+	char* strstr_result;
+	size_t len;
+	if(!(source->size) || (source->size < what->size) || (!(strstr_result = strstr(source->ptr, what->ptr)))) return 0;
+	if(dest_size < (source->size - what->size) + whit->size + 1) return -1;
+	len = strstr_result - source->ptr;
+	memcpy(dest, source->ptr, len);
+	dest += len;
+	memcpy(dest, whit->ptr, whit->size);
+	dest += whit->size;
+	if((dest_size = source->size - len - what->size)) {
+		memcpy(dest, source->ptr + len + what->size, dest_size);
+		dest += dest_size;
+	}
+	*dest = 0;
+	return 1;
+}
+
 int main(int argc, char** argv) {
-	char inbuf[4096]; char* fgets_result, *strstr_result, *p;
+	char inbuf[4096]; char* fgets_result;
 	stringptr line_b, *line = &line_b;
 	char* cmd_argv[4096];
-	char subst_buf[4096][16];
+	char subst_buf[16][4096];
 	unsigned max_subst;
 	
 	struct timeval reapTime;
 	
 	uint64_t n = 0;
-	unsigned i, j;
+	unsigned i;
 	unsigned spinup_counter = 0;
 	
 	char tempdir_buf[256];
@@ -517,22 +538,23 @@ int main(int argc, char** argv) {
 				if(prog_state.subst_entries) {
 					uint32_t* index;
 					sblist_iter(prog_state.subst_entries, index) {
-						p = argv[*index + prog_state.cmd_startarg];
-						if((strstr_result = strstr(p, "{}"))) {
-							j = 0;
-							j = strstr_result - p;
-							if(j) memcpy(subst_buf[max_subst], p, j);
-							strncpy(&subst_buf[max_subst][j], line->ptr, 4096 - j);
-							j += line->size;
-							if(j > 4096) {
-								fprintf(stderr, "fatal: line too long for substitution: %s\n", line->ptr);
-								goto out;
-							}
-							strncpy(&subst_buf[max_subst][j], strstr_result + 2, 4096 - j);
-							
+						SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
+						int ret;
+						ret = substitute(subst_buf[max_subst], 4096, source, SPL("{}"), line);
+						if(ret == -1) {
+							too_long:
+							fprintf(stderr, "fatal: line too long for substitution: %s\n", line->ptr);
+							goto out;
+						} else if(!ret) {
+							char* lastdot = stringptr_rchr(line, '.');
+							stringptr tilLastDot = *line;
+							if(lastdot) tilLastDot.size = lastdot - line->ptr;
+							ret = substitute(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
+							if(ret == -1) goto too_long;
+						}
+						if(ret) {
 							cmd_argv[*index] = subst_buf[max_subst];
 							max_subst++;
-							if(max_subst >= 16) die("too many substitutions!\n");
 						}
 					}
 				}
