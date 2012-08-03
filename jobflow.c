@@ -268,22 +268,15 @@ static void die(const char* msg) {
 	exit(1);
 }
 
-static long parse_human_number(stringptr* num) {
-	long ret = 0;
-	char buf[64];
-	if(num && num->size && num->size < sizeof(buf)) {
-		if(num->ptr[num->size -1] == 'G')
-			ret = 1024 * 1024 * 1024;
-		else if(num->ptr[num->size -1] == 'M')
-			ret = 1024 * 1024;
-		else if(num->ptr[num->size -1] == 'K')
-			ret = 1024;
-		if(ret) {
-			memcpy(buf, num->ptr, num->size);
-			buf[num->size] = 0;
-			return atol(buf) * ret;
-		}
-		return atol(num->ptr);
+static unsigned long parse_human_number(stringptr* num) {
+	unsigned long ret = 0;
+	static const unsigned long mul[] = {1024, 1024 * 1024, 1024 * 1024 * 1024};
+	const char* kmg = "KMG";
+	char* kmgind;
+	if(num && num->size) {
+		ret = atol(num->ptr);
+		if((kmgind = strchr(kmg, num->ptr[num->size -1])))
+			ret *= mul[kmgind - kmg];
 	}
 	return ret;
 }
