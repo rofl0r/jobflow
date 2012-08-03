@@ -15,6 +15,23 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/* FIXME
+when using more than 1 process, and not the -buffered option, the output of some processes gets lost.
+this happens regardless of dynamic/static linking, libc, and whether the target program fflushes before exit.
+
+piping the output into cat > file instead, everything arrives.
+linux bug ?
+
+test:
+fail:
+seq 100 | ./jobflow.out -threads=100 -exec echo {} > test.tmp ; wc -l test.tmp
+should print 100, but does not always
+
+success:
+seq 100 | ./jobflow.out -threads=100 -exec echo {} | cat > test.tmp ; wc -l test.tmp
+always prints 100
+*/
+
 #undef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #undef _XOPEN_SOURCE
@@ -58,7 +75,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* http://repo.or.cz/w/glibc.git/commitdiff/c08fb0d7bba4015078406b28d3906ccc5fda9d5a ,
  * http://repo.or.cz/w/glibc.git/commitdiff/052fa7b33ef5deeb4987e5264cf397b3161d8a01 */
 #warning to use prlimit() you have to use musl libc 0.8.4+ or glibc 2.13+
-#include <errno.h>
 static int prlimit(int pid, ...) {
 	(void) pid;
 	fprintf(stderr, "prlimit() not implemented on this system\n");
@@ -180,7 +196,7 @@ void launch_job(size_t jobindex, char** argv) {
 	}
 }
 
-static void addJobSlot(size_t job_id) {
+static void releaseJobSlot(size_t job_id) {
 	if(prog_state.free_slots_count < MAX_SLOTS) {
 		prog_state.free_slots[prog_state.free_slots_count] = job_id;
 		prog_state.free_slots_count++;
@@ -196,17 +212,16 @@ static void dump_output(size_t job_id, int is_stderr) {
 	makeLogfilename(out_filename_buf, sizeof(out_filename_buf), job_id, is_stderr);
 	
 	dst = fopen(out_filename_buf, "r");
-	while(dst && (nread = fread(buf, 1, sizeof(buf), dst))) {
-		fwrite(buf, 1, nread, out_stream);
-		if(nread < sizeof(buf)) break;
-	}
-	if(dst) 
+	if(dst) {
+		while((nread = fread(buf, 1, sizeof(buf), dst))) {
+			fwrite(buf, 1, nread, out_stream);
+			if(nread < sizeof(buf)) break;
+		}
 		fclose(dst);
-	
-	fflush(out_stream);
+		fflush(out_stream);
+	}
 }
 
-/* reap childs and return pointer to a free "slot" or NULL */
 static void reapChilds(void) {
 	size_t i;
 	job_info* job;
@@ -226,14 +241,13 @@ static void reapChilds(void) {
 				}
 				if(!retval) {
 					//log_put(js->log_fd, VARISL(" job finished: "), VARIS(job->prog), NULL);
-				}
-				else {
+				} else {
 					//log_put(js->log_fd, VARISL(" got error "), VARII(WEXITSTATUS(retval)), VARISL(" from  "), VARIS(job->prog), NULL);
 				}
 				job->pid = -1;
 				posix_spawn_file_actions_destroy(&job->fa);
 				//job->passed = 0;
-				addJobSlot(i);
+				releaseJobSlot(i);
 				prog_state.threads_running--;
 				
 				if(prog_state.buffered) {
@@ -243,7 +257,7 @@ static void reapChilds(void) {
 				}
 			}
 		} else 
-			addJobSlot(i);
+			releaseJobSlot(i);
 	}
 }
 
