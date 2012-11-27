@@ -32,5 +32,4 @@ run jobflow without arguments to see a list of possible command line options,
 and argument permutations.
 
 
-there is one known issue, see the fixme comment at the top of jobflow.c
 

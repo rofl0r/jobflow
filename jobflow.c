@@ -15,23 +15,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* FIXME
-when using more than 1 process, and not the -buffered option, the output of some processes gets lost.
-this happens regardless of dynamic/static linking, libc, and whether the target program fflushes before exit.
-
-piping the output into cat > file instead, everything arrives.
-linux bug ?
-
-test:
-fail:
-seq 100 | ./jobflow.out -threads=100 -exec echo {} > test.tmp ; wc -l test.tmp
-should print 100, but does not always
-
-success:
-seq 100 | ./jobflow.out -threads=100 -exec echo {} | cat > test.tmp ; wc -l test.tmp
-always prints 100
-*/
-
 #undef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #undef _XOPEN_SOURCE
@@ -526,6 +509,15 @@ int main(int argc, char** argv) {
 			perror("mkdtemp");
 			die("could not create tempdir\n");
 		}
+	} else {
+		/* if the stdout/stderr fds are not in O_APPEND mode,
+		   the dup()'s of the fds in posix_spawn can cause different
+		   file positions, causing the different processes to overwrite each others output.
+		   testcase:
+		   seq 100 | ./jobflow.out -threads=100 -exec echo {} > test.tmp ; wc -l test.tmp
+		*/
+		if(fcntl(1, F_SETFL, O_APPEND) == -1) perror("fcntl");
+		if(fcntl(2, F_SETFL, O_APPEND) == -1) perror("fcntl");
 	}
 	
 	if(prog_state.cmd_startarg) {
