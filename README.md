@@ -17,7 +17,9 @@ this allows for easy parallelization of standard unix tasks.
 it is possible to save the current processed line, so when the task is killed
 it can be continued later.
 
-example usage:
+example usage
+-------------
+
 you have a list of things, and a tool that processes a single thing.
 
     cat things.list | jobflow -threads=8 -exec ./mytask {}
@@ -31,5 +33,17 @@ you have a list of things, and a tool that processes a single thing.
 run jobflow without arguments to see a list of possible command line options,
 and argument permutations.
 
+BUILD
+-----
 
+    cd /tmp
+    mkdir jobflow-0000
+    cd jobflow-0000/
+    git clone https://github.com/rofl0r/libulz lib
+    git clone https://github.com/rofl0r/jobflow
+    git clone https://github.com/rofl0r/rcb
+    export PATH=$PATH:/tmp/jobflow-0000/rcb
+    ln -s /tmp/jobflow-0000/rcb/rcb.pl /tmp/jobflow-0000/rcb/rcb
+    cd jobflow
+    CC="gcc -static" CFLAGS="-O0 -g -Wall -Wextra" rcb jobflow.c
 
