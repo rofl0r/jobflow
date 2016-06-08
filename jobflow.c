@@ -78,7 +78,7 @@ typedef struct {
 } limit_rec;
 
 typedef struct {
-	int numthreads;
+	unsigned numthreads;
 	unsigned threads_running;
 	char* statefile;
 	unsigned skip;
@@ -308,9 +308,12 @@ static int parse_args(int argc, char** argv) {
 	char *op_temp;
 	if(argc == 1 || op_hasflag(op, SPL("-help")))
 		return syntax();
+
 	op_temp = op_get(op, SPL("threads"));
-	prog_state.numthreads = op_temp ? atoi(op_temp) : 1;
-	if(prog_state.numthreads <= 0) die("threadcount must be >= 1\n");
+	int x = op_temp ? atoi(op_temp) : 1;
+	if(x <= 0) die("threadcount must be >= 1\n");
+	prog_state.numthreads = x;
+
 	op_temp = op_get(op, SPL("statefile"));
 	prog_state.statefile = op_temp;
 
@@ -412,7 +415,7 @@ static int parse_args(int argc, char** argv) {
 }
 
 static void init_queue(void) {
-	int i;
+	unsigned i;
 	job_info ji = {.pid = -1};
 
 	for(i = 0; i < prog_state.numthreads; i++)
