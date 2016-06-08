@@ -264,7 +264,7 @@ static int syntax(void) {
 		"-skip=XXX\n"
 		"    XXX=number of entries to skip\n"
 		"-threads=XXX\n"
-		"    XXX=number of parallel processes to spawn]\n"
+		"    XXX=number of parallel processes to spawn\n"
 		"-resume\n"
 		"    resume from last jobnumber stored in statefile\n"
 		"-statefile=XXX\n"
