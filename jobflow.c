@@ -462,7 +462,7 @@ int main(int argc, char** argv) {
 	char subst_buf[16][4096];
 	unsigned max_subst;
 
-	uint64_t n = 0;
+	uint64_t lineno = 0;
 	unsigned i;
 	unsigned spinup_counter = 0;
 
@@ -553,17 +553,17 @@ int main(int argc, char** argv) {
 				add_job(cmd_argv);
 
 				if(prog_state.statefile && (prog_state.delayedflush == 0 || free_slots() == 0)) {
-					write_statefile(n, temp_state);
+					write_statefile(lineno, temp_state);
 				}
 			}
 		}
-		n++;
+		lineno++;
 	}
 
 	out:
 
 	if(prog_state.delayedflush)
-		write_statefile(n - 1, temp_state);
+		write_statefile(lineno - 1, temp_state);
 
 	while(prog_state.threads_running) reap_child();
 
