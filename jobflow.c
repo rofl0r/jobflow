@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2012  rofl0r
+Copyright (C) 2012,2014,2016 rofl0r
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -14,6 +14,10 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+
+#define VERSION "1.1.0"
+
 
 #undef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
@@ -246,7 +250,7 @@ static unsigned long parse_human_number(stringptr* num) {
 
 static int syntax(void) {
 	puts(
-		"jobflow (C) rofl0r\n"
+		"jobflow " VERSION " (C) rofl0r\n"
 		"------------------\n"
 		"this program is intended to be used as a recipient of another programs output\n"
 		"it launches processes to which the current line can be passed as an argument\n"
