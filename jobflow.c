@@ -96,16 +96,16 @@ typedef struct {
 	char* tempdir;
 	int delayedspinup_interval; /* use a random delay until the queue gets filled for the first time.
 				the top value in ms can be supplied via a command line switch.
-				this option makes only sense if the interval is somewhat smaller than the 
+				this option makes only sense if the interval is somewhat smaller than the
 				expected runtime of the average job.
-				this option is useful to not overload a network app due to hundreds of 
+				this option is useful to not overload a network app due to hundreds of
 				parallel connection tries on startup.
 				*/
-	int buffered:1; /* write stdout and stderr of each task into a file, 
-			and print it to stdout once the process ends. 
+	int buffered:1; /* write stdout and stderr of each task into a file,
+			and print it to stdout once the process ends.
 			this prevents mixing up of the output of multiple tasks. */
 	int delayedflush:1; /* only write to statefile whenever all processes are busy, and at program end.
-			   this means faster program execution, but could also be imprecise if the number of 
+			   this means faster program execution, but could also be imprecise if the number of
 			   jobs is small or smaller than the available threadcount / MAX_SLOTS. */
 	int join_output:1; /* join stdout and stderr of launched jobs into stdout */
 } prog_state_s;
@@ -116,7 +116,7 @@ prog_state_s prog_state;
 extern char** environ;
 
 int makeLogfilename(char* buf, size_t bufsize, size_t jobindex, int is_stderr) {
-	int ret = snprintf(buf, bufsize, 
+	int ret = snprintf(buf, bufsize,
 			   is_stderr ? "%s/jd_proc_%.5u_stdout.log" : "%s/jd_proc_%.5u_stderr.log",
 			   prog_state.tempdir, (unsigned) jobindex);
 	return ret > 0 && (size_t) ret < bufsize;
@@ -128,7 +128,7 @@ void launch_job(size_t jobindex, char** argv) {
 	job_info* job = sblist_get(prog_state.job_infos, jobindex);
 
 	if(job->pid != -1) return;
-	
+
 	if(prog_state.buffered) {
 		if((!makeLogfilename(stdout_filename_buf, sizeof(stdout_filename_buf), jobindex, 0)) ||
 		   ((!prog_state.join_output) && !makeLogfilename(stderr_filename_buf, sizeof(stderr_filename_buf), jobindex, 1)) ) {
@@ -141,27 +141,27 @@ void launch_job(size_t jobindex, char** argv) {
 	if(errno) goto spawn_error;
 	errno = posix_spawn_file_actions_addclose(&job->fa, 0);
 	if(errno) goto spawn_error;
-	
+
 	if(prog_state.buffered) {
 		errno = posix_spawn_file_actions_addclose(&job->fa, 1);
 		if(errno) goto spawn_error;
 		errno = posix_spawn_file_actions_addclose(&job->fa, 2);
 		if(errno) goto spawn_error;
 	}
-	
+
 	errno = posix_spawn_file_actions_addopen(&job->fa, 0, "/dev/null", O_RDONLY, 0);
 	if(errno) goto spawn_error;
-	
+
 	if(prog_state.buffered) {
 		errno = posix_spawn_file_actions_addopen(&job->fa, 1, stdout_filename_buf, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if(errno) goto spawn_error;
 		if(prog_state.join_output)
 			errno = posix_spawn_file_actions_adddup2(&job->fa, 1, 2);
-		else 
+		else
 			errno = posix_spawn_file_actions_addopen(&job->fa, 2, stderr_filename_buf, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if(errno) goto spawn_error;
 	}
-	
+
 	errno = posix_spawnp(&job->pid, argv[0], &job->fa, NULL, argv, environ);
 	if(errno) {
 		spawn_error:
@@ -191,9 +191,9 @@ static void dump_output(size_t job_id, int is_stderr) {
 	char buf[4096];
 	FILE* dst, *out_stream = is_stderr ? stderr : stdout;
 	size_t nread;
-	
+
 	makeLogfilename(out_filename_buf, sizeof(out_filename_buf), job_id, is_stderr);
-	
+
 	dst = fopen(out_filename_buf, "r");
 	if(dst) {
 		while((nread = fread(buf, 1, sizeof(buf), dst))) {
@@ -209,9 +209,9 @@ static void reapChilds(void) {
 	size_t i;
 	job_info* job;
 	int ret, retval;
-	
+
 	prog_state.free_slots_count = 0;
-	
+
 	for(i = 0; i < sblist_getsize(prog_state.job_infos); i++) {
 		job = sblist_get(prog_state.job_infos, i);
 		if(job->pid != -1) {
@@ -232,14 +232,14 @@ static void reapChilds(void) {
 				//job->passed = 0;
 				releaseJobSlot(i);
 				prog_state.threads_running--;
-				
+
 				if(prog_state.buffered) {
 					dump_output(i, 0);
 					if(!prog_state.join_output)
 						dump_output(i, 1);
 				}
 			}
-		} else 
+		} else
 			releaseJobSlot(i);
 	}
 }
@@ -265,7 +265,7 @@ static unsigned long parse_human_number(stringptr* num) {
 }
 
 static int syntax(void) {
-	puts(   
+	puts(
 		"jobflow (C) rofl0r\n"
 		"------------------\n"
 		"this program is intended to be used as a recipient of another programs output\n"
@@ -337,19 +337,19 @@ static int parse_args(int argc, char** argv) {
 			prog_state.skip = atoi(fc->ptr);
 		}
 	}
-	
+
 	prog_state.delayedflush = 0;
 	if(op_hasflag(op, SPL("delayedflush"))) {
 		if(!prog_state.statefile) die("-delayedflush needs -statefile\n");
 		prog_state.delayedflush = 1;
 	}
-	
+
 	op_temp = op_get(op, SPL("delayedspinup"));
 	prog_state.delayedspinup_interval = op_temp ? atoi(op_temp) : 0;
 
 	prog_state.cmd_startarg = 0;
 	prog_state.subst_entries = NULL;
-	
+
 	if(op_hasflag(op, SPL("exec"))) {
 		uint32_t subst_ent;
 		unsigned i, r = 0;
@@ -362,7 +362,7 @@ static int parse_args(int argc, char** argv) {
 		if(r && r < (unsigned) argc) {
 			prog_state.cmd_startarg = r;
 		}
-		
+
 		// save entries which must be substituted, to save some cycles.
 		prog_state.subst_entries = sblist_new(sizeof(uint32_t), 16);
 		for(i = r; i < (unsigned) argc; i++) {
@@ -370,18 +370,18 @@ static int parse_args(int argc, char** argv) {
 			if(strstr(argv[i], "{}") || strstr(argv[i], "{.}")) sblist_add(prog_state.subst_entries, &subst_ent);
 		}
 	}
-	
+
 	prog_state.buffered = 0;
 	if(op_hasflag(op, SPL("buffered"))) {
 		prog_state.buffered = 1;
 	}
-	
+
 	prog_state.join_output = 0;
 	if(op_hasflag(op, SPL("joinoutput"))) {
 		if(!prog_state.buffered) die("-joinoutput needs -buffered\n");
 		prog_state.join_output = 1;
 	}
-	
+
 	prog_state.limits = NULL;
 	op_temp = op_get(op, SPL("limits"));
 	if(op_temp) {
@@ -408,9 +408,9 @@ static int parse_args(int argc, char** argv) {
 					lim.limit = RLIMIT_FSIZE;
 				else if(EQ(key, SPL("nofiles")))
 					lim.limit = RLIMIT_NOFILE;
-				else 
+				else
 					die("unknown option passed to -limits");
-				
+
 				if(getrlimit(lim.limit, &lim.rl) == -1) {
 					perror("getrlimit");
 					die("could not query rlimits");
@@ -428,10 +428,10 @@ static int parse_args(int argc, char** argv) {
 static void init_queue(void) {
 	unsigned i;
 	job_info ji;
-	
+
 	ji.pid = -1;
 	memset(&ji.fa, 0, sizeof(ji.fa));
-	
+
 	for(i = 0; i < prog_state.numthreads; i++) {
 		sblist_add(prog_state.job_infos, &ji);
 	}
@@ -479,30 +479,30 @@ int main(int argc, char** argv) {
 	char* cmd_argv[4096];
 	char subst_buf[16][4096];
 	unsigned max_subst;
-	
+
 	struct timeval reapTime;
-	
+
 	uint64_t n = 0;
 	unsigned i;
 	unsigned spinup_counter = 0;
-	
+
 	char tempdir_buf[256];
 	char temp_state[256];
-	
+
 	srand(time(NULL));
-	
+
 	if(argc > 4096) argc = 4096;
 	prog_state.threads_running = 0;
 	prog_state.free_slots_count = 0;
 	gettimestamp(&reapTime);
-	
+
 	if(parse_args(argc, argv)) return 1;
-	
+
 	if(prog_state.statefile)
 		ulz_snprintf(temp_state, sizeof(temp_state), "%s.%u", prog_state.statefile, (unsigned) getpid());
-	
+
 	prog_state.tempdir = NULL;
-	
+
 	if(prog_state.buffered) {
 		prog_state.tempdir = tempdir_buf;
 		if(mktempdir("jobflow", tempdir_buf, sizeof(tempdir_buf)) == 0) {
@@ -519,17 +519,17 @@ int main(int argc, char** argv) {
 		if(fcntl(1, F_SETFL, O_APPEND) == -1) perror("fcntl");
 		if(fcntl(2, F_SETFL, O_APPEND) == -1) perror("fcntl");
 	}
-	
+
 	if(prog_state.cmd_startarg) {
 		for(i = prog_state.cmd_startarg; i < (unsigned) argc; i++) {
 			cmd_argv[i - prog_state.cmd_startarg] = argv[i];
 		}
 		cmd_argv[argc - prog_state.cmd_startarg] = NULL;
 	}
-	
+
 	prog_state.job_infos = sblist_new(sizeof(job_info), prog_state.numthreads);
 	init_queue();
-	
+
 	while((fgets_result = fgets(inbuf, sizeof(inbuf), stdin))) {
 		if(prog_state.skip)
 			prog_state.skip--;
@@ -539,7 +539,7 @@ int main(int argc, char** argv) {
 			else {
 				stringptr_fromchar(fgets_result, line);
 				stringptr_chomp(line);
-				
+
 				max_subst = 0;
 				if(prog_state.subst_entries) {
 					uint32_t* index;
@@ -564,21 +564,21 @@ int main(int argc, char** argv) {
 						}
 					}
 				}
-				
+
 				while(prog_state.free_slots_count == 0 || mspassed(&reapTime) > REAP_INTERVAL_MS) {
 					reapChilds();
 					gettimestamp(&reapTime);
 					if(!prog_state.free_slots_count) msleep(SLEEP_MS);
 				}
-				
+
 				if(prog_state.delayedspinup_interval && spinup_counter < (prog_state.numthreads * 2)) {
 					msleep(rand() % (prog_state.delayedspinup_interval + 1));
 					spinup_counter++;
 				}
-				
+
 				launch_job(prog_state.free_slots[prog_state.free_slots_count-1], cmd_argv);
 				prog_state.free_slots_count--;
-				
+
 				if(prog_state.statefile && (prog_state.delayedflush == 0 || prog_state.free_slots_count == 0)) {
 					write_statefile(n, temp_state);
 				}
@@ -586,28 +586,28 @@ int main(int argc, char** argv) {
 		}
 		n++;
 	}
-	
+
 	out:
-	
+
 	if(prog_state.delayedflush)
 		write_statefile(n - 1, temp_state);
-	
+
 	while(prog_state.threads_running) {
 		reapChilds();
 		if(prog_state.threads_running) msleep(SLEEP_MS);
 	}
-	
+
 	if(prog_state.subst_entries) sblist_free(prog_state.subst_entries);
 	if(prog_state.job_infos) sblist_free(prog_state.job_infos);
 	if(prog_state.limits) sblist_free(prog_state.limits);
-	
-	if(prog_state.tempdir) 
+
+	if(prog_state.tempdir)
 		rmdir(prog_state.tempdir);
-	
+
 
 	fflush(stdout);
 	fflush(stderr);
-	
-	
+
+
 	return 0;
 }
