@@ -423,14 +423,14 @@ static void init_queue(void) {
 }
 
 static void write_statefile(uint64_t n, const char* tempfile) {
-	char numbuf[64];
-	stringptr num_b, *num = &num_b;
-
-	num_b.ptr = uint64ToString(n + 1, numbuf);
-	num_b.size = strlen(numbuf);
-	stringptr_tofile((char*) tempfile, num);
-	if(rename(tempfile, prog_state.statefile) == -1)
-		perror("rename");
+	int fd = open(tempfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	if(fd != -1) {
+		dprintf(fd, "%llu\n", n + 1ULL);
+		close(fd);
+		if(rename(tempfile, prog_state.statefile) == -1)
+			perror("rename");
+	} else
+		perror("open");
 }
 
 // returns numbers of substitutions done, -1 on out of buffer.
