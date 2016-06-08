@@ -109,9 +109,8 @@ prog_state_s prog_state;
 extern char** environ;
 
 int makeLogfilename(char* buf, size_t bufsize, size_t jobindex, int is_stderr) {
-	int ret = snprintf(buf, bufsize,
-			   is_stderr ? "%s/jd_proc_%.5u_stdout.log" : "%s/jd_proc_%.5u_stderr.log",
-			   prog_state.tempdir, (unsigned) jobindex);
+	int ret = snprintf(buf, bufsize, "%s/jd_proc_%.5lu_std%s.log",
+			   prog_state.tempdir, (unsigned long) jobindex, is_stderr ? "err" : "out");
 	return ret > 0 && (size_t) ret < bufsize;
 }
 
