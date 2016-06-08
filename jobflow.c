@@ -509,7 +509,7 @@ int main(int argc, char** argv) {
 	prog_state.job_infos = sblist_new(sizeof(job_info), prog_state.numthreads);
 	init_queue();
 
-	while((fgets_result = fgets(inbuf, sizeof(inbuf), stdin))) {
+	for(;(fgets_result = fgets(inbuf, sizeof(inbuf), stdin));lineno++) {
 		if(prog_state.skip)
 			prog_state.skip--;
 		else {
@@ -557,7 +557,6 @@ int main(int argc, char** argv) {
 				}
 			}
 		}
-		lineno++;
 	}
 
 	out:
