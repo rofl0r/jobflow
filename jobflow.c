@@ -81,7 +81,7 @@ typedef struct {
 	unsigned numthreads;
 	unsigned threads_running;
 	char* statefile;
-	unsigned skip;
+	unsigned long long skip;
 	sblist* job_infos;
 	sblist* subst_entries;
 	sblist* limits;
@@ -310,7 +310,7 @@ static int parse_args(int argc, char** argv) {
 		return syntax();
 
 	op_temp = op_get(op, SPL("threads"));
-	int x = op_temp ? atoi(op_temp) : 1;
+	long long x = op_temp ? strtoll(op_temp,0,10) : 1;
 	if(x <= 0) die("threadcount must be >= 1\n");
 	prog_state.numthreads = x;
 
@@ -318,12 +318,16 @@ static int parse_args(int argc, char** argv) {
 	prog_state.statefile = op_temp;
 
 	op_temp = op_get(op, SPL("skip"));
-	prog_state.skip = op_temp ? atoi(op_temp) : 0;
+	prog_state.skip = op_temp ? strtoll(op_temp,0,10) : 0;
 	if(op_hasflag(op, SPL("resume"))) {
 		if(!prog_state.statefile) die("-resume needs -statefile\n");
 		if(access(prog_state.statefile, W_OK | R_OK) != -1) {
-			stringptr* fc = stringptr_fromfile(prog_state.statefile);
-			prog_state.skip = atoi(fc->ptr);
+			FILE *f = fopen(prog_state.statefile, "r");
+			if(f) {
+				char nb[64];
+				if(fgets(nb, sizeof nb, f)) prog_state.skip = strtoll(nb,0,10);
+				fclose(f);
+			}
 		}
 	}
 
@@ -334,7 +338,7 @@ static int parse_args(int argc, char** argv) {
 	}
 
 	op_temp = op_get(op, SPL("delayedspinup"));
-	prog_state.delayedspinup_interval = op_temp ? atoi(op_temp) : 0;
+	prog_state.delayedspinup_interval = op_temp ? strtoll(op_temp,0,10) : 0;
 
 	prog_state.cmd_startarg = 0;
 	prog_state.subst_entries = NULL;
@@ -422,7 +426,7 @@ static void init_queue(void) {
 		sblist_add(prog_state.job_infos, &ji);
 }
 
-static void write_statefile(uint64_t n, const char* tempfile) {
+static void write_statefile(unsigned long long n, const char* tempfile) {
 	int fd = open(tempfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	if(fd != -1) {
 		dprintf(fd, "%llu\n", n + 1ULL);
@@ -465,7 +469,7 @@ int main(int argc, char** argv) {
 	char subst_buf[16][4096];
 	unsigned max_subst;
 
-	uint64_t lineno = 0;
+	unsigned long long lineno = 0;
 	unsigned i;
 	unsigned spinup_counter = 0;
 
