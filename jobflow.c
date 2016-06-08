@@ -510,51 +510,51 @@ int main(int argc, char** argv) {
 	init_queue();
 
 	for(;(fgets_result = fgets(inbuf, sizeof(inbuf), stdin));lineno++) {
-		if(prog_state.skip)
+		if(prog_state.skip) {
 			prog_state.skip--;
+			continue;
+		}
+		if(!prog_state.cmd_startarg)
+			dprintf(1, fgets_result);
 		else {
-			if(!prog_state.cmd_startarg)
-				dprintf(1, fgets_result);
-			else {
-				stringptr_fromchar(fgets_result, line);
-				stringptr_chomp(line);
+			stringptr_fromchar(fgets_result, line);
+			stringptr_chomp(line);
 
-				max_subst = 0;
-				if(prog_state.subst_entries) {
-					uint32_t* index;
-					sblist_iter(prog_state.subst_entries, index) {
-						SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
-						int ret;
-						ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
-						if(ret == -1) {
-							too_long:
-							dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
-							goto out;
-						} else if(!ret) {
-							char* lastdot = stringptr_rchr(line, '.');
-							stringptr tilLastDot = *line;
-							if(lastdot) tilLastDot.size = lastdot - line->ptr;
-							ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
-							if(ret == -1) goto too_long;
-						}
-						if(ret) {
-							cmd_argv[*index] = subst_buf[max_subst];
-							max_subst++;
-						}
+			max_subst = 0;
+			if(prog_state.subst_entries) {
+				uint32_t* index;
+				sblist_iter(prog_state.subst_entries, index) {
+					SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
+					int ret;
+					ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
+					if(ret == -1) {
+						too_long:
+						dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
+						goto out;
+					} else if(!ret) {
+						char* lastdot = stringptr_rchr(line, '.');
+						stringptr tilLastDot = *line;
+						if(lastdot) tilLastDot.size = lastdot - line->ptr;
+						ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
+						if(ret == -1) goto too_long;
+					}
+					if(ret) {
+						cmd_argv[*index] = subst_buf[max_subst];
+						max_subst++;
 					}
 				}
+			}
 
 
-				if(prog_state.delayedspinup_interval && spinup_counter < (prog_state.numthreads * 2)) {
-					msleep(rand() % (prog_state.delayedspinup_interval + 1));
-					spinup_counter++;
-				}
+			if(prog_state.delayedspinup_interval && spinup_counter < (prog_state.numthreads * 2)) {
+				msleep(rand() % (prog_state.delayedspinup_interval + 1));
+				spinup_counter++;
+			}
 
-				add_job(cmd_argv);
+			add_job(cmd_argv);
 
-				if(prog_state.statefile && (prog_state.delayedflush == 0 || free_slots() == 0)) {
-					write_statefile(lineno, temp_state);
-				}
+			if(prog_state.statefile && (prog_state.delayedflush == 0 || free_slots() == 0)) {
+				write_statefile(lineno, temp_state);
 			}
 		}
 	}
