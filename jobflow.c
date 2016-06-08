@@ -58,7 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #warning to use prlimit() you have to use musl libc 0.8.4+ or glibc 2.13+
 static int prlimit(int pid, ...) {
 	(void) pid;
-	fprintf(stderr, "prlimit() not implemented on this system\n");
+	dprintf(2, "prlimit() not implemented on this system\n");
 	errno = EINVAL;
 	return -1;
 }
@@ -125,7 +125,7 @@ void launch_job(size_t jobindex, char** argv) {
 	if(prog_state.buffered) {
 		if((!makeLogfilename(stdout_filename_buf, sizeof(stdout_filename_buf), jobindex, 0)) ||
 		   ((!prog_state.join_output) && !makeLogfilename(stderr_filename_buf, sizeof(stderr_filename_buf), jobindex, 1)) ) {
-			fprintf(stderr, "temp filename too long!\n");
+			dprintf(2, "temp filename too long!\n");
 			return;
 		}
 	}
@@ -231,7 +231,7 @@ static void add_job(char **argv) {
 
 __attribute__((noreturn))
 static void die(const char* msg) {
-	fprintf(stderr, msg);
+	dprintf(2, msg);
 	exit(1);
 }
 
@@ -249,7 +249,7 @@ static unsigned long parse_human_number(stringptr* num) {
 }
 
 static int syntax(void) {
-	puts(
+	dprintf(2,
 		"jobflow " VERSION " (C) rofl0r\n"
 		"------------------\n"
 		"this program is intended to be used as a recipient of another programs output\n"
@@ -297,6 +297,7 @@ static int syntax(void) {
 		"    {.} passes everything before the last dot in a line as an argument.\n"
 		"    it is possible to use multiple substitutions inside a single argument,\n"
 		"    but currently only of one type.\n"
+		"\n"
 	);
 	return 1;
 }
@@ -477,7 +478,7 @@ int main(int argc, char** argv) {
 	if(parse_args(argc, argv)) return 1;
 
 	if(prog_state.statefile)
-		ulz_snprintf(temp_state, sizeof(temp_state), "%s.%u", prog_state.statefile, (unsigned) getpid());
+		snprintf(temp_state, sizeof(temp_state), "%s.%u", prog_state.statefile, (unsigned) getpid());
 
 	prog_state.tempdir = NULL;
 
@@ -513,7 +514,7 @@ int main(int argc, char** argv) {
 			prog_state.skip--;
 		else {
 			if(!prog_state.cmd_startarg)
-				printf(fgets_result);
+				dprintf(1, fgets_result);
 			else {
 				stringptr_fromchar(fgets_result, line);
 				stringptr_chomp(line);
@@ -527,7 +528,7 @@ int main(int argc, char** argv) {
 						ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
 						if(ret == -1) {
 							too_long:
-							fprintf(stderr, "fatal: line too long for substitution: %s\n", line->ptr);
+							dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
 							goto out;
 						} else if(!ret) {
 							char* lastdot = stringptr_rchr(line, '.');
