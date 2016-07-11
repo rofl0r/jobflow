@@ -36,6 +36,12 @@ and argument permutations.
 BUILD
 -----
 
+grab the latest release tarball from the releases page, and just run `make`.
+it contains all library dependencies.
+https://github.com/rofl0r/jobflow/releases
+
+instructions to build from git:
+
     cd /tmp
     mkdir jobflow-0000
     cd jobflow-0000/
