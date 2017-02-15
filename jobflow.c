@@ -79,6 +79,9 @@ typedef struct {
 } limit_rec;
 
 typedef struct {
+	char temp_state[256];
+	char* cmd_argv[4096];
+	unsigned long long lineno;
 	unsigned numthreads;
 	unsigned threads_running;
 	char* statefile;
@@ -508,19 +511,79 @@ int substitute_all(char* dest, ssize_t dest_size, stringptr* source, stringptr* 
 	return ret;
 }
 
-int main(int argc, char** argv) {
-	char inbuf[4096]; char* fgets_result;
-	stringptr line_b, *line = &line_b;
-	char* cmd_argv[4096];
+static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	char subst_buf[16][4096];
-	unsigned max_subst;
 
-	unsigned long long lineno = 0;
+	stringptr line_b, *line = &line_b;
+
+	prog_state.lineno++;
+	static unsigned spinup_counter = 0;
+
+
+	if(prog_state.skip) {
+		prog_state.skip--;
+		return 1;
+	}
+	if(!prog_state.cmd_startarg) {
+		dprintf(1, "%s", inbuf);
+		return 1;
+	}
+
+	line->ptr = inbuf; line->size = len;
+
+	if(!prog_state.stdin_pipe)
+		stringptr_chomp(line);
+
+	if(prog_state.subst_entries) {
+		unsigned max_subst = 0;
+		uint32_t* index;
+		sblist_iter(prog_state.subst_entries, index) {
+			SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
+			int ret;
+			ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
+			if(ret == -1) {
+				too_long:
+				dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
+				return 0;
+			} else if(!ret) {
+				char* lastdot = stringptr_rchr(line, '.');
+				stringptr tilLastDot = *line;
+				if(lastdot) tilLastDot.size = lastdot - line->ptr;
+				ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
+				if(ret == -1) goto too_long;
+			}
+			if(ret) {
+				prog_state.cmd_argv[*index] = subst_buf[max_subst];
+				max_subst++;
+			}
+		}
+	}
+
+
+	if(prog_state.delayedspinup_interval && spinup_counter < (prog_state.numthreads * 2)) {
+		msleep(rand() % (prog_state.delayedspinup_interval + 1));
+		spinup_counter++;
+	}
+
+	if(free_slots())
+		launch_job(prog_state.threads_running, prog_state.cmd_argv);
+	else if(!prog_state.stdin_pipe)
+		launch_job(reap_child(), prog_state.cmd_argv);
+
+	if(prog_state.statefile && (prog_state.delayedflush == 0 || free_slots() == 0)) {
+		write_statefile(prog_state.lineno, prog_state.temp_state);
+	}
+
+	if(prog_state.stdin_pipe)
+		pass_stdin(line);
+
+	return 1;
+}
+
+int main(int argc, char** argv) {
 	unsigned i;
-	unsigned spinup_counter = 0;
 
 	char tempdir_buf[256];
-	char temp_state[256];
 
 	srand(time(NULL));
 
@@ -531,7 +594,7 @@ int main(int argc, char** argv) {
 	if(parse_args(argc, argv)) return 1;
 
 	if(prog_state.statefile)
-		snprintf(temp_state, sizeof(temp_state), "%s.%u", prog_state.statefile, (unsigned) getpid());
+		snprintf(prog_state.temp_state, sizeof(prog_state.temp_state), "%s.%u", prog_state.statefile, (unsigned) getpid());
 
 	prog_state.tempdir = NULL;
 
@@ -554,81 +617,27 @@ int main(int argc, char** argv) {
 
 	if(prog_state.cmd_startarg) {
 		for(i = prog_state.cmd_startarg; i < (unsigned) argc; i++) {
-			cmd_argv[i - prog_state.cmd_startarg] = argv[i];
+			prog_state.cmd_argv[i - prog_state.cmd_startarg] = argv[i];
 		}
-		cmd_argv[argc - prog_state.cmd_startarg] = NULL;
+		prog_state.cmd_argv[argc - prog_state.cmd_startarg] = NULL;
 	}
 
 	prog_state.job_infos = sblist_new(sizeof(job_info), prog_state.numthreads);
 	init_queue();
 
-	for(;(fgets_result = fgets(inbuf, sizeof(inbuf), stdin));lineno++) {
-		if(prog_state.skip) {
-			prog_state.skip--;
-			continue;
-		}
-		if(!prog_state.cmd_startarg) {
-			dprintf(1, "%s", fgets_result);
-			continue;
-		}
+	prog_state.lineno = 0;
 
-		stringptr_fromchar(fgets_result, line);
-
-		if(!prog_state.stdin_pipe)
-			stringptr_chomp(line);
-
-		if(prog_state.subst_entries) {
-			max_subst = 0;
-			uint32_t* index;
-			sblist_iter(prog_state.subst_entries, index) {
-				SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
-				int ret;
-				ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
-				if(ret == -1) {
-					too_long:
-					dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
-					goto out;
-				} else if(!ret) {
-					char* lastdot = stringptr_rchr(line, '.');
-					stringptr tilLastDot = *line;
-					if(lastdot) tilLastDot.size = lastdot - line->ptr;
-					ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
-					if(ret == -1) goto too_long;
-				}
-				if(ret) {
-					cmd_argv[*index] = subst_buf[max_subst];
-					max_subst++;
-				}
-			}
-		}
-
-
-		if(prog_state.delayedspinup_interval && spinup_counter < (prog_state.numthreads * 2)) {
-			msleep(rand() % (prog_state.delayedspinup_interval + 1));
-			spinup_counter++;
-		}
-
-		if(free_slots())
-			launch_job(prog_state.threads_running, cmd_argv);
-		else if(!prog_state.stdin_pipe)
-			launch_job(reap_child(), cmd_argv);
-
-		if(prog_state.statefile && (prog_state.delayedflush == 0 || free_slots() == 0)) {
-			write_statefile(lineno, temp_state);
-		}
-
-		if(prog_state.stdin_pipe)
-			pass_stdin(line);
+	char inbuf[4096];
+	while(fgets(inbuf, sizeof(inbuf), stdin)) {
+		if(!dispatch_line(inbuf, strlen(inbuf), argv)) break;
 	}
-
-	out:
 
 	if(prog_state.stdin_pipe) {
 		close_pipes();
 	}
 
 	if(prog_state.delayedflush)
-		write_statefile(lineno - 1, temp_state);
+		write_statefile(prog_state.lineno - 1, prog_state.temp_state);
 
 	while(prog_state.threads_running) reap_child();
 
