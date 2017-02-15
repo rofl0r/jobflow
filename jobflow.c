@@ -335,6 +335,7 @@ static int syntax(void) {
 		"    {.} passes everything before the last dot in a line as an argument.\n"
 		"    it is possible to use multiple substitutions inside a single argument,\n"
 		"    but currently only of one type.\n"
+		"    if -exec is omitted, input will merely be dumped to stdout (like cat).\n"
 		"\n"
 	);
 	return 1;
@@ -346,7 +347,7 @@ static int parse_args(int argc, char** argv) {
 	op_state op_b, *op = &op_b;
 	op_init(op, argc, argv);
 	char *op_temp;
-	if(argc == 1 || op_hasflag(op, SPL("-help")))
+	if(op_hasflag(op, SPL("-help")))
 		return syntax();
 
 	op_temp = op_get(op, SPL("threads"));
