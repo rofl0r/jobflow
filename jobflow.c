@@ -679,6 +679,10 @@ int main(int argc, char** argv) {
 			if(left) dispatch_line(in, left, argv);
 			break;
 		}
+		if(left > BULK_BUFSZ) {
+			dprintf(2, "error: input line length exceeds buffer size\n");
+			goto out;
+		}
 	}
 
 	out:
