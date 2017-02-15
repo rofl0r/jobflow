@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <time.h>
 #include <assert.h>
+#include <sys/mman.h>
 
 /* process handling */
 
@@ -580,6 +581,24 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	return 1;
 }
 
+static char* mystrnchr(const char *in, int ch, size_t end) {
+	const char *e = in+end;
+	const char *p = in;
+	while(p != e && *p != ch) p++;
+	if(*p == ch) return (char*)p;
+	return 0;
+}
+static char* mystrnrchr(const char *in, int ch, size_t end) {
+	const char *e = in+end-1;
+	const char *p = in;
+	while(p != e && *e != ch) e--;
+	if(*e == ch) return (char*)e;
+	return 0;
+}
+
+#define BULK_KB 16
+#define BULK_BUFSZ BULK_KB*1024
+
 int main(int argc, char** argv) {
 	unsigned i;
 
@@ -627,10 +646,42 @@ int main(int argc, char** argv) {
 
 	prog_state.lineno = 0;
 
-	char inbuf[4096];
-	while(fgets(inbuf, sizeof(inbuf), stdin)) {
-		if(!dispatch_line(inbuf, strlen(inbuf), argv)) break;
+	size_t left = 0;
+
+	char *mem = mmap(NULL, BULK_BUFSZ*2, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+	char *buf1 = mem;
+	char *buf2 = mem+BULK_BUFSZ;
+	char *in, *inbuf;
+
+	while(1) {
+		inbuf = buf1+BULK_BUFSZ-left;
+		memcpy(inbuf, buf2+BULK_BUFSZ-left, left);
+		ssize_t n = read(0, buf2, BULK_BUFSZ);
+		if(n == -1) {
+			perror("read");
+			goto out;
+		}
+		left += n;
+		in = inbuf;
+		while(left) {
+			char *p;
+			if(!prog_state.stdin_pipe)
+				p = mystrnchr (in, '\n', left);
+			else
+				p = mystrnrchr(in, '\n', left);
+			if(!p) break;
+			ptrdiff_t diff = (p - in) + 1;
+			if(!dispatch_line(in, diff, argv)) goto out;
+			left -= diff;
+			in += diff;
+		}
+		if(!n) {
+			if(left) dispatch_line(in, left, argv);
+			break;
+		}
 	}
+
+	out:
 
 	if(prog_state.stdin_pipe) {
 		close_pipes();
