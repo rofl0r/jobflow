@@ -106,7 +106,7 @@ typedef struct {
 			   this means faster program execution, but could also be imprecise if the number of
 			   jobs is small or smaller than the available threadcount. */
 	int join_output:1; /* join stdout and stderr of launched jobs into stdout */
-	int stdin_pipe:1;
+	int pipe_mode:1;
 } prog_state_s;
 
 prog_state_s prog_state;
@@ -142,7 +142,7 @@ void launch_job(size_t jobindex, char** argv) {
 	if(errno) goto spawn_error;
 
 	int pipes[2];
-	if(prog_state.stdin_pipe) {
+	if(prog_state.pipe_mode) {
 		if(pipe(pipes)) {
 			perror("pipe");
 			goto spawn_error;
@@ -163,7 +163,7 @@ void launch_job(size_t jobindex, char** argv) {
 		if(errno) goto spawn_error;
 	}
 
-	if(!prog_state.stdin_pipe) {
+	if(!prog_state.pipe_mode) {
 		errno = posix_spawn_file_actions_addopen(&job->fa, 0, "/dev/null", O_RDONLY, 0);
 		if(errno) goto spawn_error;
 	}
@@ -193,7 +193,8 @@ void launch_job(size_t jobindex, char** argv) {
 			}
 		}
 	}
-	if(prog_state.stdin_pipe) close(pipes[0]);
+	if(prog_state.pipe_mode)
+		close(pipes[0]);
 }
 
 static void dump_output(size_t job_id, int is_stderr) {
@@ -289,16 +290,15 @@ static int syntax(void) {
 		"this program is intended to be used as a recipient of another programs output\n"
 		"it launches processes to which the current line can be passed as an argument\n"
 		"using {} for substitution (as in find -exec).\n"
+		"if no substitution argument ({} or {.}) is provided, input is piped into\n"
+		"stdin of child processes. input will be then evenly distributed to jobs,\n"
+		"until EOF is received.\n"
 		"\n"
 		"available options:\n\n"
 		"-skip=XXX -threads=XXX -resume -statefile=/tmp/state -delayedflush\n"
 		"-delayedspinup=XXX -buffered -joinoutput -limits=mem=16M,cpu=10\n"
-		"-pipe -exec ./mycommand {}\n"
+		"-exec ./mycommand {}\n"
 		"\n"
-		"-pipe\n"
-		"    child processes receive input on stdin. if this option\n"
-		"    is used, input will be evenly distributed to jobs.\n"
-		"    all jobs will stay alive until EOF is received.\n"
 		"-skip=XXX\n"
 		"    XXX=number of entries to skip\n"
 		"-threads=XXX\n"
@@ -377,8 +377,7 @@ static int parse_args(int argc, char** argv) {
 		prog_state.delayedflush = 1;
 	}
 
-	prog_state.stdin_pipe = 0;
-	if(op_hasflag(op, SPL("pipe"))) prog_state.stdin_pipe = 1;
+	prog_state.pipe_mode = 0;
 
 	op_temp = op_get(op, SPL("delayedspinup"));
 	prog_state.delayedspinup_interval = op_temp ? strtoll(op_temp,0,10) : 0;
@@ -399,18 +398,19 @@ static int parse_args(int argc, char** argv) {
 			prog_state.cmd_startarg = r;
 		}
 
-		if(!prog_state.stdin_pipe)
-			prog_state.subst_entries = sblist_new(sizeof(uint32_t), 16);
+		prog_state.subst_entries = sblist_new(sizeof(uint32_t), 16);
 
 		// save entries which must be substituted, to save some cycles.
 		for(i = r; i < (unsigned) argc; i++) {
 			subst_ent = i - r;
 			if(strstr(argv[i], "{}") || strstr(argv[i], "{.}")) {
-				if(prog_state.stdin_pipe)
-					die("argument substitution must not be used when -pipe option is given\n");
-
 				sblist_add(prog_state.subst_entries, &subst_ent);
 			}
+		}
+		if(sblist_getsize(prog_state.subst_entries) == 0) {
+			prog_state.pipe_mode = 1;
+			sblist_free(prog_state.subst_entries);
+			prog_state.subst_entries = 0;
 		}
 	}
 
@@ -532,7 +532,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 
 	line->ptr = inbuf; line->size = len;
 
-	if(!prog_state.stdin_pipe)
+	if(!prog_state.pipe_mode)
 		stringptr_chomp(line);
 
 	if(prog_state.subst_entries) {
@@ -568,14 +568,14 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 
 	if(free_slots())
 		launch_job(prog_state.threads_running, prog_state.cmd_argv);
-	else if(!prog_state.stdin_pipe)
+	else if(!prog_state.pipe_mode)
 		launch_job(reap_child(), prog_state.cmd_argv);
 
 	if(prog_state.statefile && (prog_state.delayedflush == 0 || free_slots() == 0)) {
 		write_statefile(prog_state.lineno, prog_state.temp_state);
 	}
 
-	if(prog_state.stdin_pipe)
+	if(prog_state.pipe_mode)
 		pass_stdin(line);
 
 	return 1;
@@ -665,7 +665,7 @@ int main(int argc, char** argv) {
 		in = inbuf;
 		while(left) {
 			char *p;
-			if(!prog_state.stdin_pipe)
+			if(!prog_state.pipe_mode)
 				p = mystrnchr (in, '\n', left);
 			else
 				p = mystrnrchr(in, '\n', left);
@@ -683,7 +683,7 @@ int main(int argc, char** argv) {
 
 	out:
 
-	if(prog_state.stdin_pipe) {
+	if(prog_state.pipe_mode) {
 		close_pipes();
 	}
 
