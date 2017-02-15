@@ -525,7 +525,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 		return 1;
 	}
 	if(!prog_state.cmd_startarg) {
-		dprintf(1, "%s", inbuf);
+		write(1, inbuf, len);
 		return 1;
 	}
 
