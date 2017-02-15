@@ -568,7 +568,7 @@ int main(int argc, char** argv) {
 			continue;
 		}
 		if(!prog_state.cmd_startarg) {
-			dprintf(1, fgets_result);
+			dprintf(1, "%s", fgets_result);
 			continue;
 		}
 
