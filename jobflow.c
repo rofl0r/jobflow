@@ -653,6 +653,8 @@ int main(int argc, char** argv) {
 	char *buf2 = mem+BULK_BUFSZ;
 	char *in, *inbuf;
 
+	int exitcode = 1;
+
 	while(1) {
 		inbuf = buf1+BULK_BUFSZ-left;
 		memcpy(inbuf, buf2+BULK_BUFSZ-left, left);
@@ -671,7 +673,8 @@ int main(int argc, char** argv) {
 				p = mystrnrchr(in, '\n', left);
 			if(!p) break;
 			ptrdiff_t diff = (p - in) + 1;
-			if(!dispatch_line(in, diff, argv)) goto out;
+			if(!dispatch_line(in, diff, argv))
+				goto out;
 			left -= diff;
 			in += diff;
 		}
@@ -684,6 +687,8 @@ int main(int argc, char** argv) {
 			goto out;
 		}
 	}
+
+	exitcode = 0;
 
 	out:
 
@@ -708,5 +713,5 @@ int main(int argc, char** argv) {
 	fflush(stderr);
 
 
-	return 0;
+	return exitcode;
 }
