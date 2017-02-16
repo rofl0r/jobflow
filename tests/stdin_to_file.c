@@ -1,4 +1,4 @@
-#include "../lib/include/stringptr.h"
+#include "../../lib/include/stringptr.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>

@@ -1,4 +1,4 @@
-#include "../lib/include/timelib.h"
+#include "../../lib/include/timelib.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,7 +13,7 @@ long parse_human_number(char* num) {
 	char buf[64];
 	if(!num) return 0;
 	size_t l = strlen(num);
-	
+
 	if(l && l < sizeof(buf)) {
 		if(num[l -1] == 'G')
 			ret = 1024 * 1024 * 1024;
@@ -38,9 +38,9 @@ int main(int argc, char** argv) {
 	if (argc != 2) return syntax();
 	waste_secs = parse_human_number(argv[1]);
 	gettimestamp(&start);
-	
+
 	while(mspassed(&start) < waste_secs * 1000) {}
-	
-	printf("successfully wasted %lu seconds of your cpu time\n", waste_secs);
+
+	printf("successfully wasted %ld seconds of your cpu time\n", waste_secs);
 	return 0;
 }
