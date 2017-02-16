@@ -10,6 +10,9 @@ CFLAGS_DBG=-g -O0
 CFLAGS_OPT=-Os -s
 CFLAGS_OPT_AGGRESSIVE=-O3 -s -flto -fwhole-program
 
+TESTSRC=$(sort $(wildcard tests/*.c))
+TESTS=$(TESTSRC:.c=.out)
+
 -include config.mak
 
 CFLAGS_RCB_OPT_AGGRESSIVE=$(DB_FLAGS) ${CFLAGS_OWN} ${CFLAGS_OPT_AGGRESSIVE} ${CFLAGS}
@@ -33,5 +36,9 @@ odebug:
 debug:
 	CFLAGS="${CFLAGS_RCB_DBG}" rcb --force $(RCBFLAGS) ${MAINFILE} $(LINKLIBS)
 
+tests: $(TESTS)
+
+tests/%.out: tests/%.c
+	CFLAGS="${CFLAGS_RCB_DBG}" rcb --force $(RCBFLAGS) $<
 
 .PHONY: all optimized optimized-aggressive debug odebug
