@@ -217,12 +217,32 @@ static void dump_output(size_t job_id, int is_stderr) {
 	}
 }
 
+static void write_all(int fd, void* buf, size_t size) {
+	size_t left = size;
+	const char *p = buf;
+	while(1) {
+		if(left == 0) break;
+		ssize_t n = write(fd, p, left);
+		switch(n) {
+		case -1:
+			if(errno == EINTR) continue;
+			else {
+				perror("write");
+				return;
+			}
+		default:
+			p += n;
+			left -= n;
+		}
+	}
+}
+
 static void pass_stdin(stringptr *line) {
 	static size_t next_child = 0;
 	if(next_child >= sblist_getsize(prog_state.job_infos))
 		next_child = 0;
 	job_info *job = sblist_get(prog_state.job_infos, next_child);
-	write(job->pipe, line->ptr, line->size);
+	write_all(job->pipe, line->ptr, line->size);
 	next_child++;
 }
 
@@ -546,7 +566,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 		return 1;
 	}
 	if(!prog_state.cmd_startarg) {
-		write(1, inbuf, len);
+		write_all(1, inbuf, len);
 		return 1;
 	}
 
