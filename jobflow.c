@@ -356,6 +356,9 @@ static int syntax(void) {
 		"    task runtimes. by using it, syscall overhead can be reduced to a minimum.\n"
 		"    XXX must be a multiple of 4KB. the suffixes G/M/K are detected.\n"
 		"    actual memory allocation will be twice the amount passed.\n"
+		"    note that pipe buffer size is limited to 64K on linux, so anything higher\n"
+		"    than that probably doesn't make sense.\n"
+		"    if no size is passed (i.e. only -bulk), a default of 4K will be used.\n"
 		"-limits=[mem=XXX,cpu=XXX,stack=XXX,fsize=XXX,nofiles=XXX]\n"
 		"    sets the rlimit of the new created processes.\n"
 		"    see \"man setrlimit\" for an explanation. the suffixes G/M/K are detected.\n"
@@ -463,7 +466,8 @@ static int parse_args(int argc, char** argv) {
 		prog_state.bulk_bytes = parse_human_number(value);
 		if(prog_state.bulk_bytes % 4096)
 			die("bulk size must be a multiple of 4096\n");
-	}
+	} else if(op_hasflag(op, SPL("bulk")))
+		prog_state.bulk_bytes = 4096;
 
 	prog_state.limits = NULL;
 	op_temp = op_get(op, SPL("limits"));
