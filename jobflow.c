@@ -323,7 +323,7 @@ static int syntax(void) {
 		"\n"
 		"-skip=XXX\n"
 		"    XXX=number of entries to skip\n"
-		"-threads=XXX\n"
+		"-threads=XXX (alternative: -j=XXX)\n"
 		"    XXX=number of parallel processes to spawn\n"
 		"-resume\n"
 		"    resume from last jobnumber stored in statefile\n"
@@ -385,6 +385,7 @@ static int parse_args(int argc, char** argv) {
 		return syntax();
 
 	op_temp = op_get(op, SPL("threads"));
+	if(!op_temp) op_temp = op_get(op, SPL("j"));
 	long long x = op_temp ? strtoll(op_temp,0,10) : 1;
 	if(x <= 0) die("threadcount must be >= 1\n");
 	prog_state.numthreads = x;
