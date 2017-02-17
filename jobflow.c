@@ -556,18 +556,63 @@ int substitute_all(char* dest, ssize_t dest_size, stringptr* source, stringptr* 
 	return ret;
 }
 
+static char* mystrnchr(const char *in, int ch, size_t end) {
+	const char *e = in+end;
+	const char *p = in;
+	while(p != e && *p != ch) p++;
+	if(*p == ch) return (char*)p;
+	return 0;
+}
+static char* mystrnrchr(const char *in, int ch, size_t end) {
+	const char *e = in+end-1;
+	const char *p = in;
+	while(p != e && *e != ch) e--;
+	if(*e == ch) return (char*)e;
+	return 0;
+}
+
+static int need_linecounter(void) {
+	return !!prog_state.skip || prog_state.statefile;
+}
+static size_t count_linefeeds(const char *buf, size_t len) {
+	const char *p = buf, *e = buf+len;
+	size_t cnt = 0;
+	while(p < e) {
+		if(*p == '\n') cnt++;
+		p++;
+	}
+	return cnt;
+}
 static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	char subst_buf[16][4096];
+	static unsigned spinup_counter = 0;
 
 	stringptr line_b, *line = &line_b;
 
-	prog_state.lineno++;
-	static unsigned spinup_counter = 0;
-
+	if(!prog_state.bulk_bytes)
+		prog_state.lineno++;
+	else if(need_linecounter()) {
+		prog_state.lineno += count_linefeeds(inbuf, len);
+	}
 
 	if(prog_state.skip) {
-		prog_state.skip--;
-		return 1;
+		if(!prog_state.bulk_bytes) {
+			prog_state.skip--;
+			return 1;
+		} else {
+			while(len && prog_state.skip) {
+				char *q = mystrnchr(inbuf, '\n', len);
+				if(q) {
+					ptrdiff_t diff = (q - inbuf) + 1;
+					inbuf += diff;
+					len -= diff;
+					prog_state.skip--;
+				} else {
+					return 1;
+				}
+			}
+			if(!len) return 1;
+		}
 	}
 	if(!prog_state.cmd_startarg) {
 		write_all(1, inbuf, len);
@@ -623,21 +668,6 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 		pass_stdin(line);
 
 	return 1;
-}
-
-static char* mystrnchr(const char *in, int ch, size_t end) {
-	const char *e = in+end;
-	const char *p = in;
-	while(p != e && *p != ch) p++;
-	if(*p == ch) return (char*)p;
-	return 0;
-}
-static char* mystrnrchr(const char *in, int ch, size_t end) {
-	const char *e = in+end-1;
-	const char *p = in;
-	while(p != e && *e != ch) e--;
-	if(*e == ch) return (char*)e;
-	return 0;
 }
 
 int main(int argc, char** argv) {
