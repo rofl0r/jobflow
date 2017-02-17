@@ -214,6 +214,7 @@ static void dump_output(size_t job_id, int is_stderr) {
 		}
 		fclose(dst);
 		fflush(out_stream);
+		unlink(out_filename_buf);
 	}
 }
 
