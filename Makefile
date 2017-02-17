@@ -41,4 +41,7 @@ tests: $(TESTS)
 tests/%.out: tests/%.c
 	CFLAGS="${CFLAGS_RCB_DBG}" rcb --force $(RCBFLAGS) $<
 
+check: test.sh tests/stdin_printer.out
+	./test.sh
+
 .PHONY: all optimized optimized-aggressive debug odebug
