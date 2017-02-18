@@ -562,7 +562,7 @@ static char* mystrnchr(const char *in, int ch, size_t end) {
 	const char *e = in+end;
 	const char *p = in;
 	while(p != e && *p != ch) p++;
-	if(*p == ch) return (char*)p;
+	if(p != e) return (char*)p;
 	return 0;
 }
 static char* mystrnrchr(const char *in, int ch, size_t end) {
