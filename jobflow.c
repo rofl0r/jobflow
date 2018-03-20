@@ -719,7 +719,7 @@ int main(int argc, char** argv) {
 
 	prog_state.lineno = 0;
 
-	size_t left = 0;
+	size_t left = 0, bytes_read = 0;
 	const size_t chunksize = prog_state.bulk_bytes ? prog_state.bulk_bytes : 16*1024;
 
 	char *mem = mmap(NULL, chunksize*2, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -731,12 +731,13 @@ int main(int argc, char** argv) {
 
 	while(1) {
 		inbuf = buf1+chunksize-left;
-		memcpy(inbuf, buf2+chunksize-left, left);
+		memcpy(inbuf, buf2+bytes_read-left, left);
 		ssize_t n = read(0, buf2, chunksize);
 		if(n == -1) {
 			perror("read");
 			goto out;
 		}
+		bytes_read = n;
 		left += n;
 		in = inbuf;
 		while(left) {
