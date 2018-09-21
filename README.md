@@ -40,7 +40,6 @@ GNU parallel is written in perl, which has the following disadvantages:
   several hours of time to compile it from source on slow devices)
 - requires a lot of time on startup (parsing sources, etc)
 - requires a lot of memory (typically between 5-60 MB)
-- some versions of perl's garbage collector are buggy and leak memory
 
 jobflow OTOH is written in C, which has numerous advantages.
 - once compiled to a tiny static binary, can be used without 3rd party stuff
