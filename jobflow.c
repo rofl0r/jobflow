@@ -585,8 +585,9 @@ static size_t count_linefeeds(const char *buf, size_t len) {
 	}
 	return cnt;
 }
+#define MAX_SUBSTS 16
 static int dispatch_line(char* inbuf, size_t len, char** argv) {
-	char subst_buf[16][4096];
+	char subst_buf[MAX_SUBSTS][4096];
 	static unsigned spinup_counter = 0;
 
 	stringptr line_b, *line = &line_b;
@@ -630,6 +631,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 		unsigned max_subst = 0;
 		uint32_t* index;
 		sblist_iter(prog_state.subst_entries, index) {
+			if(max_subst >= MAX_SUBSTS) break;
 			SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
 			int ret;
 			ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
