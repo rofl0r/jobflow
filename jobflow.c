@@ -381,7 +381,7 @@ static int parse_args(int argc, char** argv) {
 	op_state op_b, *op = &op_b;
 	op_init(op, argc, argv);
 	char *op_temp;
-	if(op_hasflag(op, SPL("-help")))
+	if(op_hasflag(op, SPL("help")))
 		return syntax();
 
 	op_temp = op_get(op, SPL("threads"));
