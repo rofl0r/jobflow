@@ -315,7 +315,7 @@ static int syntax(void) {
 		"using {} for substitution (as in find -exec).\n"
 		"if no substitution argument ({} or {.}) is provided, input is piped into\n"
 		"stdin of child processes. input will be then evenly distributed to jobs,\n"
-		"until EOF is received.\n"
+		"until EOF is received. we call this 'pipe mode'.\n"
 		"\n"
 		"available options:\n\n"
 		"-skip=XXX -threads=XXX -resume -statefile=/tmp/state -delayedflush\n"
