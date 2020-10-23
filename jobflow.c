@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/include/sblist.h"
 #include "../lib/include/strlib.h"
 #include "../lib/include/timelib.h"
-#include "../lib/include/filelib.h"
 #include "../lib/include/macros.h"
 
 #include <stdio.h>
@@ -66,8 +65,51 @@ static int prlimit(int pid, ...) {
 }
 #endif
 
-
 #include <sys/time.h>
+
+/* some small helper funcs from libulz */
+
+static const char ulz_conv_cypher[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+static const size_t ulz_conv_cypher_len = sizeof(ulz_conv_cypher) - 1;
+static char* ulz_mkdtemp(char* templ) {
+	size_t i, l = strlen(templ);
+	if(l < 6) {
+		errno = EINVAL;
+		return NULL;
+	}
+	loop:
+	for(i = l - 6; i < l; i++) templ[i] = ulz_conv_cypher[rand() % ulz_conv_cypher_len];
+	if(mkdir(templ, S_IRWXU) == -1) {
+		if(errno == EEXIST) goto loop;
+		return NULL;
+	}
+	return templ;
+}
+
+static size_t gen_fn(char* buf, const char* prefix, size_t pl, const char* tmpdir) {
+	size_t tl = strlen(tmpdir);
+	size_t a = 0;
+	memcpy(buf+a, tmpdir, tl);
+	a+=tl;
+	memcpy(buf+a,prefix,pl);
+	a+=pl;
+	memcpy(buf+a,"XXXXXX", 7);
+	return a+6;
+}
+
+/* calls mkdtemp on /dev/shm and on failure on /tmp, to get the fastest possible
+ * storage. returns size of the string returned in buffer */
+static size_t mktempdir(const char* prefix, char* buffer, size_t bufsize) {
+	size_t ret, pl = strlen(prefix);
+	if(bufsize < sizeof("/dev/shm/") -1 + pl + sizeof("XXXXXX")) return 0;
+	ret = gen_fn(buffer, prefix, pl, "/dev/shm/");
+	if(!ulz_mkdtemp(buffer)) {
+		ret = gen_fn(buffer, prefix, pl, "/tmp/");
+		if(!ulz_mkdtemp(buffer)) return 0;
+	}
+	return ret;
+}
+
 
 typedef struct {
 	pid_t pid;
