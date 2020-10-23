@@ -290,12 +290,12 @@ static void write_all(int fd, void* buf, size_t size) {
 	}
 }
 
-static void pass_stdin(stringptr *line) {
+static void pass_stdin(char *line, size_t len) {
 	static size_t next_child = 0;
 	if(next_child >= sblist_getsize(prog_state.job_infos))
 		next_child = 0;
 	job_info *job = sblist_get(prog_state.job_infos, next_child);
-	write_all(job->pipe, line->ptr, line->size);
+	write_all(job->pipe, line, len);
 	next_child++;
 }
 
@@ -732,7 +732,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	}
 
 	if(prog_state.pipe_mode)
-		pass_stdin(line);
+		pass_stdin(line->ptr, line->size);
 
 	return 1;
 }
