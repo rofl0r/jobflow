@@ -28,11 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/include/optparser.h"
 #include "../lib/include/stringptr.h"
-#include "../lib/include/stringptrlist.h"
 #include "../lib/include/sblist.h"
 #include "../lib/include/strlib.h"
 #include "../lib/include/timelib.h"
 #include "../lib/include/filelib.h"
+#include "../lib/include/macros.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <time.h>
 #include <assert.h>
+#include <ctype.h>
 #include <sys/mman.h>
 
 /* process handling */
@@ -293,16 +294,16 @@ static void die(const char* msg) {
 	exit(1);
 }
 
-static unsigned long parse_human_number(stringptr* num) {
+static unsigned long parse_human_number(const char* num) {
 	unsigned long ret = 0;
 	static const unsigned long mul[] = {1024, 1024 * 1024, 1024 * 1024 * 1024};
 	const char* kmg = "KMG";
-	char* kmgind;
-	if(num && num->size) {
-		ret = atol(num->ptr);
-		if((kmgind = strchr(kmg, num->ptr[num->size -1])))
-			ret *= mul[kmgind - kmg];
-	}
+	const char* kmgind, *p;
+	ret = atol(num);
+	p = num;
+	while(isdigit(*(++p)));
+	if(*p && (kmgind = strchr(kmg, *p)))
+		ret *= mul[kmgind - kmg];
 	return ret;
 }
 
@@ -473,8 +474,7 @@ static int parse_args(int argc, char** argv) {
 	prog_state.bulk_bytes = 0;
 	op_temp = op_get(op, SPL("bulk"));
 	if(op_temp) {
-		SPDECLAREC(value, op_temp);
-		prog_state.bulk_bytes = parse_human_number(value);
+		prog_state.bulk_bytes = parse_human_number(op_temp);
 		if(prog_state.bulk_bytes % 4096)
 			die("bulk size must be a multiple of 4096\n");
 	} else if(op_hasflag(op, SPL("bulk")))
@@ -484,40 +484,37 @@ static int parse_args(int argc, char** argv) {
 	op_temp = op_get(op, SPL("limits"));
 	if(op_temp) {
 		unsigned i;
-		SPDECLAREC(limits, op_temp);
-		stringptrlist* limit_list = stringptr_splitc(limits, ',');
-		stringptrlist* kv;
-		stringptr* key, *value;
-		limit_rec lim;
-		if(stringptrlist_getsize(limit_list)) {
-			prog_state.limits = sblist_new(sizeof(limit_rec), stringptrlist_getsize(limit_list));
-			for(i = 0; i < stringptrlist_getsize(limit_list); i++) {
-				kv = stringptr_splitc(stringptrlist_get(limit_list, i), '=');
-				if(stringptrlist_getsize(kv) != 2) continue;
-				key = stringptrlist_get(kv, 0);
-				value = stringptrlist_get(kv, 1);
-				if(EQ(key, SPL("mem")))
-					lim.limit = RLIMIT_AS;
-				else if(EQ(key, SPL("cpu")))
-					lim.limit = RLIMIT_CPU;
-				else if(EQ(key, SPL("stack")))
-					lim.limit = RLIMIT_STACK;
-				else if(EQ(key, SPL("fsize")))
-					lim.limit = RLIMIT_FSIZE;
-				else if(EQ(key, SPL("nofiles")))
-					lim.limit = RLIMIT_NOFILE;
-				else
-					die("unknown option passed to -limits");
-
-				if(getrlimit(lim.limit, &lim.rl) == -1) {
-					perror("getrlimit");
-					die("could not query rlimits");
+		char *limits = op_temp;
+		while(1) {
+			limits += strspn(limits, ",");
+			size_t l = strcspn(limits, ",");
+			if(!l) break;
+			size_t l2 = strcspn(limits, "=");
+			if(l2 >= l) die("syntax error in limits argument");
+			limit_rec lim;
+			if(!prog_state.limits)
+				prog_state.limits = sblist_new(sizeof(limit_rec), 4);
+			static const struct { int lim_val; const char lim_name[8]; } lim_tab[] = {
+				{ RLIMIT_AS, "mem" },
+				{ RLIMIT_CPU, "cpu" },
+				{ RLIMIT_STACK, "stack" },
+				{ RLIMIT_FSIZE, "fsize" },
+				{ RLIMIT_NOFILE, "nofiles" },
+			};
+			for(i=0; i<ARRAY_SIZE(lim_tab);++i)
+				if(!strncmp(limits, lim_tab[i].lim_name, l2)) {
+					lim.limit = lim_tab[i].lim_val;
+					break;
 				}
-				lim.rl.rlim_cur = parse_human_number(value);
-				sblist_add(prog_state.limits, &lim);
-				stringptrlist_free(kv);
+			if(i >= ARRAY_SIZE(lim_tab))
+				die("unknown option passed to -limits");
+			if(getrlimit(lim.limit, &lim.rl) == -1) {
+				perror("getrlimit");
+				die("could not query rlimits");
 			}
-			stringptrlist_free(limit_list);
+			lim.rl.rlim_cur = parse_human_number(limits+l2+1);
+			sblist_add(prog_state.limits, &lim);
+			limits += l;
 		}
 	}
 	return 0;
