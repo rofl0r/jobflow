@@ -30,7 +30,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/include/stringptr.h"
 #include "../lib/include/sblist.h"
 #include "../lib/include/strlib.h"
-#include "../lib/include/timelib.h"
 #include "../lib/include/macros.h"
 
 #include <stdio.h>
@@ -68,6 +67,15 @@ static int prlimit(int pid, ...) {
 #include <sys/time.h>
 
 /* some small helper funcs from libulz */
+
+static int msleep(long millisecs) {
+        struct timespec req, rem;
+        req.tv_sec = millisecs / 1000;
+        req.tv_nsec = (millisecs % 1000) * 1000 * 1000;
+        int ret;
+        while((ret = nanosleep(&req, &rem)) == -1 && errno == EINTR) req = rem;
+        return ret;
+}
 
 static const char ulz_conv_cypher[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 static const size_t ulz_conv_cypher_len = sizeof(ulz_conv_cypher) - 1;
