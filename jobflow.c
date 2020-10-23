@@ -16,7 +16,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 
-#define VERSION "1.2.3"
+#define VERSION "1.2.4"
 
 
 #undef _POSIX_C_SOURCE
