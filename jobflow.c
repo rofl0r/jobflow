@@ -628,6 +628,10 @@ static char* mystrnrchr(const char *in, int ch, size_t end) {
 	if(*e == ch) return (char*)e;
 	return 0;
 }
+static char* mystrnrchr_chk(const char *in, int ch, size_t end) {
+	if(!end) return 0;
+	return mystrnrchr(in, ch, end);
+}
 
 static int need_linecounter(void) {
 	return !!prog_state.skip || prog_state.statefile;
@@ -708,7 +712,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 				dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
 				return 0;
 			} else if(!ret) {
-				char* lastdot = stringptr_rchr(line, '.');
+				char* lastdot = mystrnrchr_chk(line->ptr, '.', line->size);
 				stringptr tilLastDot = *line;
 				if(lastdot) tilLastDot.size = lastdot - line->ptr;
 				ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
