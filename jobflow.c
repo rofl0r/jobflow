@@ -648,6 +648,11 @@ static int match_eof(char* inbuf, size_t len) {
 	return l == len-1 && !memcmp(prog_state.eof_marker, inbuf, l);
 }
 
+static inline int islb(int p) { return p == '\n' || p == '\r'; }
+static void chomp(char *s, size_t *len) {
+	while(*len && islb(s[*len-1])) s[--(*len)] = 0;
+}
+
 #define MAX_SUBSTS 16
 static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	char subst_buf[MAX_SUBSTS][4096];
@@ -685,10 +690,10 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 		return 1;
 	}
 
-	line->ptr = inbuf; line->size = len;
-
 	if(!prog_state.pipe_mode)
-		stringptr_chomp(line);
+		chomp(inbuf, &len);
+
+	line->ptr = inbuf; line->size = len;
 
 	if(prog_state.subst_entries) {
 		unsigned max_subst = 0;
