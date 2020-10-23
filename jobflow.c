@@ -434,7 +434,7 @@ static int parse_args(int argc, char** argv) {
 		uint32_t subst_ent;
 		unsigned i, r = 0;
 		for(i = 1; i < (unsigned) argc; i++) {
-			if(str_equal(argv[i], "-exec")) {
+			if(str_equal(argv[i], "-exec") || str_equal(argv[i], "--exec")) {
 				r = i + 1;
 				break;
 			}
