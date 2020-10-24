@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #undef _GNU_SOURCE
 #define _GNU_SOURCE
 
-#include "../lib/include/sblist.h"
+#include "sblist.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 

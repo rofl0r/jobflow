@@ -62,20 +62,10 @@ following other differences exist between GNU parallel and jobflow:
 BUILD
 -----
 
-grab the latest release tarball from the releases page, and just run `make`.
-it contains all library dependencies.
-https://github.com/rofl0r/jobflow/releases
+just run `make`.
 
-instructions to build from git:
+you may override variables used in the Makefile and set optimization
+CFLAGS and similar thing using a file called `config.mak`, e.g.:
 
-    cd /tmp
-    mkdir jobflow-0000
-    cd jobflow-0000/
-    git clone https://github.com/rofl0r/libulz lib
-    git clone https://github.com/rofl0r/jobflow
-    git clone https://github.com/rofl0r/rcb
-    export PATH=$PATH:/tmp/jobflow-0000/rcb
-    ln -s /tmp/jobflow-0000/rcb/rcb.pl /tmp/jobflow-0000/rcb/rcb
-    cd jobflow
-    CC="gcc -static" CFLAGS="-O0 -g -Wall -Wextra" rcb jobflow.c
-
+    echo "CFLAGS=-O2 -g" > config.mak
+    make -j2
