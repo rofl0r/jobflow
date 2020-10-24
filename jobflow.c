@@ -343,11 +343,7 @@ static size_t free_slots(void) {
 	return prog_state.numthreads - prog_state.threads_running;
 }
 
-__attribute__((noreturn))
-static void die(const char* msg) {
-	dprintf(2, msg);
-	exit(1);
-}
+#define die(...) do { dprintf(2, "error: " __VA_ARGS__); exit(1); } while(0)
 
 static unsigned long parse_human_number(const char* num) {
 	unsigned long ret = 0;
@@ -467,9 +463,9 @@ static int parse_args(unsigned argc, char** argv) {
 
 	for(i=1; i<argc; ++i) {
 		char *p = argv[i], *q = 0;
-		if(*(p++) != '-') die("expected option");
+		if(*(p++) != '-') die("expected option instead of %s\n", argv[i]);
 		if(*p == '-') p++;
-		if(!*p) die("invalid option");
+		if(!*p) die("invalid option %s\n", argv[i]);
 		for(j=0;j<ARRAY_SIZE(opt_tab);++j,q=0) {
 			if((!p[1] && *p == opt_tab[j].sname) ||
 			   (!strcmp(p, opt_tab[j].lname)) ||
@@ -478,7 +474,7 @@ static int parse_args(unsigned argc, char** argv) {
 				case 'b': *opt_tab[j].dest.b=1; break;
 				case 'i': case 's':
 					if(!q) {
-						if(argc < i+1) die("option requires operand");
+						if(argc < i+1) die("option %s requires operand\n", argv[i]);
 						q = argv[++i];
 					} else
 						++q;
@@ -497,7 +493,7 @@ static int parse_args(unsigned argc, char** argv) {
 				break;
 			} else if(!strcmp(p, "help")) {
 				return syntax();
-			} else die("unknown option");
+			} else die("unknown option %s\n", argv[i]);
 		}
 	}
 
@@ -515,9 +511,8 @@ static int parse_args(unsigned argc, char** argv) {
 		}
 	}
 
-	if(prog_state.delayedflush) {
-		if(!prog_state.statefile) die("-delayedflush needs -statefile\n");
-	}
+	if(prog_state.delayedflush && !prog_state.statefile)
+		die("-delayedflush needs -statefile\n");
 
 	prog_state.pipe_mode = 0;
 	prog_state.cmd_startarg = r;
@@ -527,7 +522,7 @@ static int parse_args(unsigned argc, char** argv) {
 		uint32_t subst_ent;
 		if(r < (unsigned) argc) {
 			prog_state.cmd_startarg = r;
-		} else die("-exec without arguments");
+		} else die("-exec without arguments\n");
 
 		prog_state.subst_entries = sblist_new(sizeof(uint32_t), 16);
 
@@ -545,9 +540,8 @@ static int parse_args(unsigned argc, char** argv) {
 		}
 	}
 
-	if(prog_state.join_output) {
-		if(!prog_state.buffered) die("-joinoutput needs -buffered\n");
-	}
+	if(prog_state.join_output && !prog_state.buffered)
+		die("-joinoutput needs -buffered\n");
 
 	if(bulk) {
 		prog_state.bulk_bytes = parse_human_number(bulk);
@@ -562,7 +556,7 @@ static int parse_args(unsigned argc, char** argv) {
 			size_t l = strcspn(limits, ",");
 			if(!l) break;
 			size_t l2 = strcspn(limits, "=");
-			if(l2 >= l) die("syntax error in limits argument");
+			if(l2 >= l) die("syntax error in limits argument\n");
 			limit_rec lim;
 			if(!prog_state.limits)
 				prog_state.limits = sblist_new(sizeof(limit_rec), 4);
@@ -579,10 +573,10 @@ static int parse_args(unsigned argc, char** argv) {
 					break;
 				}
 			if(i >= ARRAY_SIZE(lim_tab))
-				die("unknown option passed to -limits");
+				die("unknown option passed to -limits\n");
 			if(getrlimit(lim.limit, &lim.rl) == -1) {
 				perror("getrlimit");
-				die("could not query rlimits");
+				die("could not query rlimits\n");
 			}
 			lim.rl.rlim_cur = parse_human_number(limits+l2+1);
 			sblist_add(prog_state.limits, &lim);
