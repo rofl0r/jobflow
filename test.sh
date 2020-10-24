@@ -42,6 +42,26 @@ dotest() {
 	echo "running test $testno ($1)"
 }
 
+dotest "argpermutation std"
+echo foo1337bar > $(tmp).1
+echo 1337 | $JF -exec echo 'foo{}bar' > $(tmp).2
+test_equal $(tmp).1 $(tmp).2
+
+dotest "argpermutation std 2x"
+echo foo1337bar1337 > $(tmp).1
+echo 1337 | $JF -exec echo 'foo{}bar{}' > $(tmp).2
+test_equal $(tmp).1 $(tmp).2
+
+dotest "argpermutation dot"
+echo foobar.png > $(tmp).1
+echo foobar.bmp | $JF -exec echo '{.}.png' > $(tmp).2
+test_equal $(tmp).1 $(tmp).2
+
+dotest "argpermutation dot 2x"
+echo 'mv foobar.pcx foobar.png' > $(tmp).1
+echo foobar.bmp | $JF -exec echo 'mv {.}.pcx {.}.png' > $(tmp).2
+test_equal $(tmp).1 $(tmp).2
+
 dotest "seq 10 catmode skip 5"
 seq 10 > $(tmp).1
 $JF -skip=5 < $(tmp).1 > $(tmp).2
