@@ -474,13 +474,19 @@ static int parse_args(unsigned argc, char** argv) {
 				case 'b': *opt_tab[j].dest.b=1; break;
 				case 'i': case 's':
 					if(!q) {
-						if(argc <= i+1) die("option %s requires operand\n", argv[i]);
+						if(argc <= i+1 || argv[i+1][0] == '-') {
+						e_expect_op:;
+							die("option %s requires operand\n", argv[i]);
+						}
 						q = argv[++i];
-					} else
-						++q;
-					if(opt_tab[j].flag == 'i')
+					} else {
+						if(*(++q) == 0) goto e_expect_op;
+					}
+					if(opt_tab[j].flag == 'i') {
+						if(!isdigit(*q))
+							die("expected numeric operand for %s at %s\n", p, q);
 						*opt_tab[j].dest.i=strtoll(q,0,10);
-					else
+					} else
 						*opt_tab[j].dest.s=q;
 					break;
 				}
