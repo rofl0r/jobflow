@@ -26,11 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #undef _GNU_SOURCE
 #define _GNU_SOURCE
 
-#include "../lib/include/stringptr.h"
 #include "../lib/include/sblist.h"
-#include "../lib/include/macros.h"
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -687,8 +688,6 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	char subst_buf[MAX_SUBSTS][4096];
 	static unsigned spinup_counter = 0;
 
-	stringptr line_b, *line = &line_b;
-
 	if(!prog_state.bulk_bytes)
 		prog_state.lineno++;
 	else if(need_linecounter()) {
@@ -722,7 +721,8 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	if(!prog_state.pipe_mode)
 		chomp(inbuf, &len);
 
-	line->ptr = inbuf; line->size = len;
+	char *line = inbuf;
+	size_t line_size = len;
 
 	if(prog_state.subst_entries) {
 		unsigned max_subst = 0;
@@ -735,19 +735,19 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 			ret = substitute_all(subst_buf[max_subst], 4096,
 					     source, source_len,
 					     "{}", 2,
-					     line->ptr, line->size);
+					     line, line_size);
 			if(ret == -1) {
 				too_long:
-				dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
+				dprintf(2, "fatal: line too long for substitution: %s\n", line);
 				return 0;
 			} else if(!ret) {
-				char* lastdot = mystrnrchr_chk(line->ptr, '.', line->size);
-				stringptr tilLastDot = *line;
-				if(lastdot) tilLastDot.size = lastdot - line->ptr;
+				char* lastdot = mystrnrchr_chk(line, '.', line_size);
+				size_t tilLastDot = line_size;
+				if(lastdot) tilLastDot = lastdot - line;
 				ret = substitute_all(subst_buf[max_subst], 4096,
 						     source, source_len,
 						     "{.}", 3,
-						     tilLastDot.ptr, tilLastDot.size);
+						     line, tilLastDot);
 				if(ret == -1) goto too_long;
 			}
 			if(ret) {
@@ -773,7 +773,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	}
 
 	if(prog_state.pipe_mode)
-		pass_stdin(line->ptr, line->size);
+		pass_stdin(line, line_size);
 
 	return 1;
 }
