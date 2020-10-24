@@ -26,14 +26,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #undef _GNU_SOURCE
 #define _GNU_SOURCE
 
-#include "../lib/include/optparser.h"
 #include "../lib/include/stringptr.h"
 #include "../lib/include/sblist.h"
-#include "../lib/include/strlib.h"
 #include "../lib/include/macros.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -133,36 +132,39 @@ typedef struct {
 typedef struct {
 	char temp_state[256];
 	char* cmd_argv[4096];
-	unsigned long long lineno;
-	unsigned numthreads;
-	unsigned threads_running;
-	char* statefile;
-	char* eof_marker;
-	unsigned long long skip;
 	sblist* job_infos;
 	sblist* subst_entries;
 	sblist* limits;
-	unsigned cmd_startarg;
 	char* tempdir;
-	int delayedspinup_interval; /* use a random delay until the queue gets filled for the first time.
+	unsigned long long lineno;
+
+	char* statefile;
+	char* eof_marker;
+	unsigned long numthreads;
+	unsigned long threads_running;
+	unsigned long skip;
+	unsigned long delayedspinup_interval; /* use a random delay until the queue gets filled for the first time.
 				the top value in ms can be supplied via a command line switch.
 				this option makes only sense if the interval is somewhat smaller than the
 				expected runtime of the average job.
 				this option is useful to not overload a network app due to hundreds of
 				parallel connection tries on startup.
 				*/
-	int buffered:1; /* write stdout and stderr of each task into a file,
+	unsigned long bulk_bytes;
+
+	bool pipe_mode;
+	bool buffered; /* write stdout and stderr of each task into a file,
 			and print it to stdout once the process ends.
 			this prevents mixing up of the output of multiple tasks. */
-	int delayedflush:1; /* only write to statefile whenever all processes are busy, and at program end.
+	bool delayedflush; /* only write to statefile whenever all processes are busy, and at program end.
 			   this means faster program execution, but could also be imprecise if the number of
 			   jobs is small or smaller than the available threadcount. */
-	int join_output:1; /* join stdout and stderr of launched jobs into stdout */
-	int pipe_mode:1;
-	size_t bulk_bytes;
+	bool join_output; /* join stdout and stderr of launched jobs into stdout */
+
+	unsigned cmd_startarg;
 } prog_state_s;
 
-prog_state_s prog_state;
+static prog_state_s prog_state;
 
 
 extern char** environ;
@@ -369,29 +371,29 @@ static int syntax(void) {
 		"until EOF is received. we call this 'pipe mode'.\n"
 		"\n"
 		"available options:\n\n"
-		"-skip=XXX -threads=XXX -resume -statefile=/tmp/state -delayedflush\n"
-		"-delayedspinup=XXX -buffered -joinoutput -limits=mem=16M,cpu=10\n"
+		"-skip N -threads N -resume -statefile=/tmp/state -delayedflush\n"
+		"-delayedspinup N -buffered -joinoutput -limits mem=16M,cpu=10\n"
 		"-eof=XXX\n"
 		"-exec ./mycommand {}\n"
 		"\n"
-		"-skip=XXX\n"
-		"    XXX=number of entries to skip\n"
-		"-threads=XXX (alternative: -j=XXX)\n"
-		"    XXX=number of parallel processes to spawn\n"
+		"-skip N\n"
+		"    N=number of entries to skip\n"
+		"-threads N (alternative: -j N)\n"
+		"    N=number of parallel processes to spawn\n"
 		"-resume\n"
 		"    resume from last jobnumber stored in statefile\n"
-		"-eof=XXX\n"
+		"-eof XXX\n"
 		"    use XXX as the EOF marker on stdin\n"
 		"    if the marker is encountered, behave as if stdin was closed\n"
 		"    not compatible with pipe/bulk mode\n"
-		"-statefile=XXX\n"
+		"-statefile XXX\n"
 		"    XXX=filename\n"
 		"    saves last launched jobnumber into a file\n"
 		"-delayedflush\n"
 		"    only write to statefile whenever all processes are busy,\n"
 		"    and at program end\n"
-		"-delayedspinup=XXX\n"
-		"    XXX=maximum amount of milliseconds\n"
+		"-delayedspinup N\n"
+		"    N=maximum amount of milliseconds\n"
 		"    ...to wait when spinning up a fresh set of processes\n"
 		"    a random value between 0 and the chosen amount is used to delay initial\n"
 		"    spinup.\n"
@@ -405,19 +407,18 @@ static int syntax(void) {
 		"    if -buffered, write both stdout and stderr into the same file.\n"
 		"    this saves the chronological order of the output, and the combined output\n"
 		"    will only be printed to stdout.\n"
-		"-bulk=XXX\n"
-		"    do bulk copies with a buffer of XXX bytes. only usable in pipe mode.\n"
+		"-bulk N\n"
+		"    do bulk copies with a buffer of N bytes. only usable in pipe mode.\n"
 		"    this passes (almost) the entire buffer to the next scheduled job.\n"
 		"    the passed buffer will be truncated to the last line break boundary,\n"
 		"    so jobs always get entire lines to work with.\n"
 		"    this option is useful when you have huge input files and relatively short\n"
 		"    task runtimes. by using it, syscall overhead can be reduced to a minimum.\n"
-		"    XXX must be a multiple of 4KB. the suffixes G/M/K are detected.\n"
+		"    N must be a multiple of 4KB. the suffixes G/M/K are detected.\n"
 		"    actual memory allocation will be twice the amount passed.\n"
 		"    note that pipe buffer size is limited to 64K on linux, so anything higher\n"
 		"    than that probably doesn't make sense.\n"
-		"    if no size is passed (i.e. only -bulk), a default of 4K will be used.\n"
-		"-limits=[mem=XXX,cpu=XXX,stack=XXX,fsize=XXX,nofiles=XXX]\n"
+		"-limits [mem=N,cpu=N,stack=N,fsize=N,nofiles=N]\n"
 		"    sets the rlimit of the new created processes.\n"
 		"    see \"man setrlimit\" for an explanation. the suffixes G/M/K are detected.\n"
 		"-exec command with args\n"
@@ -432,28 +433,69 @@ static int syntax(void) {
 	return 1;
 }
 
-static int parse_args(int argc, char** argv) {
-	op_state op_b, *op = &op_b;
-	op_init(op, argc, argv);
-	char *op_temp;
-	if(op_hasflag(op, SPL("help")))
-		return syntax();
+static int parse_args(unsigned argc, char** argv) {
+	unsigned i, j, r = 0;
+	static bool resume = 0;
+	static char *bulk = 0, *limits = 0;
+	static const struct {
+		const char lname[14];
+		const char sname;
+		const char flag;
+		union {
+			bool *b;
+			unsigned long *i;
+			char **s;
+		} dest;
+	} opt_tab[] = {
+		{"threads", 'j', 'i', .dest.i = &prog_state.numthreads },
+		{"statefile", 0, 's', .dest.s = &prog_state.statefile },
+		{"eof", 0, 's', .dest.s = &prog_state.eof_marker },
+		{"skip", 0, 'i', .dest.i = &prog_state.skip },
+		{"resume", 0, 'b', .dest.b = &resume },
+		{"delayedflush", 0, 'b', .dest.b = &prog_state.delayedflush },
+		{"delayedspinup", 0, 'i', .dest.i = &prog_state.delayedspinup_interval },
+		{"buffered", 0, 'b', .dest.b =&prog_state.buffered},
+		{"joinoutput", 0, 'b', .dest.b =&prog_state.join_output},
+		{"bulk", 0, 's', .dest.s = &bulk},
+		{"limits", 0, 's', .dest.s = &limits},
+	};
 
-	op_temp = op_get(op, SPL("threads"));
-	if(!op_temp) op_temp = op_get(op, SPL("j"));
-	long long x = op_temp ? strtoll(op_temp,0,10) : 1;
-	if(x <= 0) die("threadcount must be >= 1\n");
-	prog_state.numthreads = x;
+	prog_state.numthreads = 1;
 
-	op_temp = op_get(op, SPL("statefile"));
-	prog_state.statefile = op_temp;
+	for(i=1; i<argc; ++i) {
+		char *p = argv[i];
+		if(*(p++) != '-') die("expected option");
+		if(*p == '-') p++;
+		if(!*p) die("invalid option");
+		for(j=0;j<ARRAY_SIZE(opt_tab);++j) {
+			if((!p[1] && *p == opt_tab[j].sname) ||
+			   (!strcmp(p, opt_tab[j].lname))) {
+				switch(opt_tab[j].flag) {
+				case 'b': *opt_tab[j].dest.b=1; break;
+				case 'i': case 's':
+					if(argc < i+1) die("option requires operand");
+					if(opt_tab[j].flag == 'i')
+						*opt_tab[j].dest.i=strtoll(argv[++i],0,10);
+					else
+						*opt_tab[j].dest.s=argv[++i];
+					break;
+				}
+				break;
+			}
+		}
+		if(j>=ARRAY_SIZE(opt_tab)) {
+			if(!strcmp(p, "exec")) {
+				r = i+1;
+				break;
+			} else if(!strcmp(p, "help")) {
+				return syntax();
+			} else die("unknown option");
+		}
+	}
 
-	op_temp = op_get(op, SPL("eof"));
-	prog_state.eof_marker = op_temp;
+	if((long)prog_state.numthreads <= 0) die("threadcount must be >= 1\n");
 
-	op_temp = op_get(op, SPL("skip"));
-	prog_state.skip = op_temp ? strtoll(op_temp,0,10) : 0;
-	if(op_hasflag(op, SPL("resume"))) {
+	if(resume) {
 		if(!prog_state.statefile) die("-resume needs -statefile\n");
 		if(access(prog_state.statefile, W_OK | R_OK) != -1) {
 			FILE *f = fopen(prog_state.statefile, "r");
@@ -465,32 +507,19 @@ static int parse_args(int argc, char** argv) {
 		}
 	}
 
-	prog_state.delayedflush = 0;
-	if(op_hasflag(op, SPL("delayedflush"))) {
+	if(prog_state.delayedflush) {
 		if(!prog_state.statefile) die("-delayedflush needs -statefile\n");
-		prog_state.delayedflush = 1;
 	}
 
 	prog_state.pipe_mode = 0;
-
-	op_temp = op_get(op, SPL("delayedspinup"));
-	prog_state.delayedspinup_interval = op_temp ? strtoll(op_temp,0,10) : 0;
-
-	prog_state.cmd_startarg = 0;
+	prog_state.cmd_startarg = r;
 	prog_state.subst_entries = NULL;
 
-	if(op_hasflag(op, SPL("exec"))) {
+	if(r) {
 		uint32_t subst_ent;
-		unsigned i, r = 0;
-		for(i = 1; i < (unsigned) argc; i++) {
-			if(str_equal(argv[i], "-exec") || str_equal(argv[i], "--exec")) {
-				r = i + 1;
-				break;
-			}
-		}
-		if(r && r < (unsigned) argc) {
+		if(r < (unsigned) argc) {
 			prog_state.cmd_startarg = r;
-		}
+		} else die("-exec without arguments");
 
 		prog_state.subst_entries = sblist_new(sizeof(uint32_t), 16);
 
@@ -508,31 +537,18 @@ static int parse_args(int argc, char** argv) {
 		}
 	}
 
-	prog_state.buffered = 0;
-	if(op_hasflag(op, SPL("buffered"))) {
-		prog_state.buffered = 1;
-	}
-
-	prog_state.join_output = 0;
-	if(op_hasflag(op, SPL("joinoutput"))) {
+	if(prog_state.join_output) {
 		if(!prog_state.buffered) die("-joinoutput needs -buffered\n");
-		prog_state.join_output = 1;
 	}
 
-	prog_state.bulk_bytes = 0;
-	op_temp = op_get(op, SPL("bulk"));
-	if(op_temp) {
-		prog_state.bulk_bytes = parse_human_number(op_temp);
+	if(bulk) {
+		prog_state.bulk_bytes = parse_human_number(bulk);
 		if(prog_state.bulk_bytes % 4096)
 			die("bulk size must be a multiple of 4096\n");
-	} else if(op_hasflag(op, SPL("bulk")))
-		prog_state.bulk_bytes = 4096;
+	}
 
-	prog_state.limits = NULL;
-	op_temp = op_get(op, SPL("limits"));
-	if(op_temp) {
+	if(limits) {
 		unsigned i;
-		char *limits = op_temp;
 		while(1) {
 			limits += strspn(limits, ",");
 			size_t l = strcspn(limits, ",");
