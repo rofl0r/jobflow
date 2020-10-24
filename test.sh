@@ -1,6 +1,7 @@
 #!/bin/sh
-test -z "$JF" && JF=./jobflow.out
+test -z "$JF" && JF=./jobflow
 TMP=/tmp/jobflow.test.$$
+gcc tests/stdin_printer.c -o tests/stdin_printer.out || { error compiling tests/stdin_printer.c ; exit 1 ; }
 tmp() {
 	echo $TMP.$testno
 }
@@ -49,13 +50,13 @@ test_equal $(tmp).2 $(tmp).3
 
 dotest "seq 10000 bulk skip 1337"
 seq 10000 | sort -u > $(tmp).1
-$JF -bulk -skip=1337 -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
+$JF -bulk=4K -skip=1337 -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
 tail -n $((10000 - 1337)) < $(tmp).1 > $(tmp).3
 test_equal $(tmp).2 $(tmp).3
 
 dotest "seq 100000 bulk skip 31337 3x"
 seq 100000 | sort -u > $(tmp).1
-$JF -bulk -threads=3 -skip=31337 -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
+$JF -bulk=4K -threads=3 -skip=31337 -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
 tail -n $((100000 - 31337)) < $(tmp).1 > $(tmp).3
 test_equal $(tmp).2 $(tmp).3
 
@@ -86,18 +87,18 @@ dotest "seq 10000 pipe cat 3x"
 # process will write "1\n", so the end result may have "101\n"
 # twice, which would get filtered out by sort -u.
 seq 10000 > $(tmp).1
-$JF -threads=3 -pipe -exec cat < $(tmp).1 > $(tmp).2
+$JF -threads=3 -exec cat < $(tmp).1 > $(tmp).2
 test_equal_size $(tmp).1 $(tmp).2
 
 dotest "seq 10000 pipe cat buffered 3x"
 # same restrictions as above apply, but since we use -buffered
 seq 10000 | sort -u > $(tmp).1
-$JF -threads=3 -pipe -buffered -exec cat < $(tmp).1 | sort -u > $(tmp).2
+$JF -threads=3 -buffered -exec cat < $(tmp).1 | sort -u > $(tmp).2
 test_equal $(tmp).1 $(tmp).2
 
 dotest "seq 10000 pipe linecat 3x"
 seq 10000 | sort -u > $(tmp).1
-$JF -threads=3 -pipe -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
+$JF -threads=3 -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
 test_equal $(tmp).1 $(tmp).2
 
 dotest "seq 10000 echo 3x"
