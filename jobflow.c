@@ -435,7 +435,7 @@ static int syntax(void) {
 static int parse_args(unsigned argc, char** argv) {
 	unsigned i, j, r = 0;
 	static bool resume = 0;
-	static char *bulk = 0, *limits = 0;
+	static char *limits = 0;
 	static const struct {
 		const char lname[14];
 		const char sname;
@@ -455,7 +455,7 @@ static int parse_args(unsigned argc, char** argv) {
 		{"delayedspinup", 0, 'i', .dest.i = &prog_state.delayedspinup_interval },
 		{"buffered", 0, 'b', .dest.b =&prog_state.buffered},
 		{"joinoutput", 0, 'b', .dest.b =&prog_state.join_output},
-		{"bulk", 0, 's', .dest.s = &bulk},
+		{"bulk", 0, 'i', .dest.i = &prog_state.bulk_bytes},
 		{"limits", 0, 's', .dest.s = &limits},
 	};
 
@@ -485,7 +485,7 @@ static int parse_args(unsigned argc, char** argv) {
 					if(opt_tab[j].flag == 'i') {
 						if(!isdigit(*q))
 							die("expected numeric operand for %s at %s\n", p, q);
-						*opt_tab[j].dest.i=strtoll(q,0,10);
+						*opt_tab[j].dest.i=parse_human_number(q);
 					} else
 						*opt_tab[j].dest.s=q;
 					break;
@@ -549,11 +549,8 @@ static int parse_args(unsigned argc, char** argv) {
 	if(prog_state.join_output && !prog_state.buffered)
 		die("-joinoutput needs -buffered\n");
 
-	if(bulk) {
-		prog_state.bulk_bytes = parse_human_number(bulk);
-		if(prog_state.bulk_bytes % 4096)
-			die("bulk size must be a multiple of 4096\n");
-	}
+	if(prog_state.bulk_bytes % 4096)
+		die("bulk size must be a multiple of 4096\n");
 
 	if(limits) {
 		unsigned i;
