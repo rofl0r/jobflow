@@ -474,7 +474,7 @@ static int parse_args(unsigned argc, char** argv) {
 				case 'b': *opt_tab[j].dest.b=1; break;
 				case 'i': case 's':
 					if(!q) {
-						if(argc < i+1) die("option %s requires operand\n", argv[i]);
+						if(argc <= i+1) die("option %s requires operand\n", argv[i]);
 						q = argv[++i];
 					} else
 						++q;
