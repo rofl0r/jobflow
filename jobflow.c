@@ -432,8 +432,6 @@ static int syntax(void) {
 	return 1;
 }
 
-#undef strtoll
-#define strtoll(a,b,c) strtoint64(a, strlen(a))
 static int parse_args(int argc, char** argv) {
 	op_state op_b, *op = &op_b;
 	op_init(op, argc, argv);
