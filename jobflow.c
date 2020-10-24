@@ -466,21 +466,26 @@ static int parse_args(unsigned argc, char** argv) {
 	prog_state.numthreads = 1;
 
 	for(i=1; i<argc; ++i) {
-		char *p = argv[i];
+		char *p = argv[i], *q = 0;
 		if(*(p++) != '-') die("expected option");
 		if(*p == '-') p++;
 		if(!*p) die("invalid option");
-		for(j=0;j<ARRAY_SIZE(opt_tab);++j) {
+		for(j=0;j<ARRAY_SIZE(opt_tab);++j,q=0) {
 			if((!p[1] && *p == opt_tab[j].sname) ||
-			   (!strcmp(p, opt_tab[j].lname))) {
+			   (!strcmp(p, opt_tab[j].lname)) ||
+			   ((q = strchr(p, '=')) && !strncmp(p, opt_tab[j].lname, q-p))) {
 				switch(opt_tab[j].flag) {
 				case 'b': *opt_tab[j].dest.b=1; break;
 				case 'i': case 's':
-					if(argc < i+1) die("option requires operand");
+					if(!q) {
+						if(argc < i+1) die("option requires operand");
+						q = argv[++i];
+					} else
+						++q;
 					if(opt_tab[j].flag == 'i')
-						*opt_tab[j].dest.i=strtoll(argv[++i],0,10);
+						*opt_tab[j].dest.i=strtoll(q,0,10);
 					else
-						*opt_tab[j].dest.s=argv[++i];
+						*opt_tab[j].dest.s=q;
 					break;
 				}
 				break;
