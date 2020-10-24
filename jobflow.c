@@ -589,21 +589,32 @@ static void write_statefile(unsigned long long n, const char* tempfile) {
 		perror("open");
 }
 
+static int str_here(char* haystack, size_t hay_size, size_t bufpos,
+		    char* needle, size_t needle_size) {
+	if(needle_size <= hay_size - bufpos) {
+		if(!memcmp(needle, haystack + bufpos, needle_size))
+			return 1;
+	}
+	return 0;
+}
 // returns numbers of substitutions done, -1 on out of buffer.
 // dest is always overwritten. if not substitutions were done, it contains a copy of source.
-int substitute_all(char* dest, ssize_t dest_size, stringptr* source, stringptr* what, stringptr* whit) {
+int substitute_all(char *dest, ssize_t dest_size,
+		   char *src, size_t src_size,
+		   char *what, size_t what_size,
+		   char *whit, size_t whit_size) {
 	size_t i;
 	int ret = 0;
-	for(i = 0; dest_size > 0 && i < source->size; ) {
-		if(stringptr_here(source, i, what)) {
-			if(dest_size < (ssize_t) whit->size) return -1;
-			memcpy(dest, whit->ptr, whit->size);
-			dest += whit->size;
-			dest_size -= whit->size;
+	for(i = 0; dest_size > 0 && i < src_size; ) {
+		if(str_here(src, src_size, i, what, what_size)) {
+			if(dest_size < (ssize_t) whit_size) return -1;
+			memcpy(dest, whit, whit_size);
+			dest += whit_size;
+			dest_size -= whit_size;
 			ret++;
-			i += what->size;
+			i += what_size;
 		} else {
-			*dest = source->ptr[i];
+			*dest = src[i];
 			dest++;
 			dest_size--;
 			i++;
@@ -704,9 +715,13 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 		uint32_t* index;
 		sblist_iter(prog_state.subst_entries, index) {
 			if(max_subst >= MAX_SUBSTS) break;
-			SPDECLAREC(source, argv[*index + prog_state.cmd_startarg]);
+			char *source = argv[*index + prog_state.cmd_startarg];
+			size_t source_len = strlen(source);
 			int ret;
-			ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{}"), line);
+			ret = substitute_all(subst_buf[max_subst], 4096,
+					     source, source_len,
+					     "{}", 2,
+					     line->ptr, line->size);
 			if(ret == -1) {
 				too_long:
 				dprintf(2, "fatal: line too long for substitution: %s\n", line->ptr);
@@ -715,7 +730,10 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 				char* lastdot = mystrnrchr_chk(line->ptr, '.', line->size);
 				stringptr tilLastDot = *line;
 				if(lastdot) tilLastDot.size = lastdot - line->ptr;
-				ret = substitute_all(subst_buf[max_subst], 4096, source, SPL("{.}"), &tilLastDot);
+				ret = substitute_all(subst_buf[max_subst], 4096,
+						     source, source_len,
+						     "{.}", 3,
+						     tilLastDot.ptr, tilLastDot.size);
 				if(ret == -1) goto too_long;
 			}
 			if(ret) {
