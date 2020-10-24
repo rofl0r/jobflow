@@ -172,13 +172,13 @@ static prog_state_s prog_state;
 
 extern char** environ;
 
-int makeLogfilename(char* buf, size_t bufsize, size_t jobindex, int is_stderr) {
+static int makeLogfilename(char* buf, size_t bufsize, size_t jobindex, int is_stderr) {
 	int ret = snprintf(buf, bufsize, "%s/jd_proc_%.5lu_std%s.log",
 			   prog_state.tempdir, (unsigned long) jobindex, is_stderr ? "err" : "out");
 	return ret > 0 && (size_t) ret < bufsize;
 }
 
-void launch_job(size_t jobindex, char** argv) {
+static void launch_job(size_t jobindex, char** argv) {
 	char stdout_filename_buf[256];
 	char stderr_filename_buf[256];
 	job_info* job = sblist_get(prog_state.job_infos, jobindex);
@@ -618,7 +618,7 @@ static int str_here(char* haystack, size_t hay_size, size_t bufpos,
 }
 // returns numbers of substitutions done, -1 on out of buffer.
 // dest is always overwritten. if not substitutions were done, it contains a copy of source.
-int substitute_all(char *dest, ssize_t dest_size,
+static int substitute_all(char *dest, ssize_t dest_size,
 		   char *src, size_t src_size,
 		   char *what, size_t what_size,
 		   char *whit, size_t whit_size) {
