@@ -77,8 +77,9 @@ static int msleep(long millisecs) {
         return ret;
 }
 
-static const char ulz_conv_cypher[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-static const size_t ulz_conv_cypher_len = sizeof(ulz_conv_cypher) - 1;
+static const char ulz_conv_cypher[] =
+	"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+#define ulz_conv_cypher_len (sizeof(ulz_conv_cypher) - 1)
 static char* ulz_mkdtemp(char* templ) {
 	size_t i, l = strlen(templ);
 	if(l < 6) {
@@ -86,7 +87,8 @@ static char* ulz_mkdtemp(char* templ) {
 		return NULL;
 	}
 	loop:
-	for(i = l - 6; i < l; i++) templ[i] = ulz_conv_cypher[rand() % ulz_conv_cypher_len];
+	for(i = l - 6; i < l; i++)
+		templ[i] = ulz_conv_cypher[rand() % ulz_conv_cypher_len];
 	if(mkdir(templ, S_IRWXU) == -1) {
 		if(errno == EEXIST) goto loop;
 		return NULL;
