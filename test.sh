@@ -68,6 +68,12 @@ $JF -skip=5 < $(tmp).1 > $(tmp).2
 tail -n 5 < $(tmp).1 > $(tmp).3
 test_equal $(tmp).2 $(tmp).3
 
+dotest "seq 10 catmode skip 5 count 3"
+seq 10 > $(tmp).1
+$JF -skip=5 -count=3 < $(tmp).1 > $(tmp).2
+tail -n 5 < $(tmp).1 | head -n 3 > $(tmp).3
+test_equal $(tmp).2 $(tmp).3
+
 dotest "seq 10000 bulk skip 1337"
 seq 10000 | sort -u > $(tmp).1
 $JF -bulk=4K -skip=1337 -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
