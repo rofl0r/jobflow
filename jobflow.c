@@ -362,7 +362,7 @@ static int syntax(void) {
 	dprintf(2,
 		"jobflow " VERSION " (C) rofl0r\n"
 		"------------------------\n"
-		"this program is intended to be used as a recipient of another programs output\n"
+		"this program is intended to be used as a recipient of another programs output.\n"
 		"it launches processes to which the current line can be passed as an argument\n"
 		"using {} for substitution (as in find -exec).\n"
 		"if no substitution argument ({} or {.}) is provided, input is piped into\n"
