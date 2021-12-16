@@ -156,6 +156,7 @@ typedef struct {
 	unsigned long bulk_bytes;
 
 	bool pipe_mode;
+	bool use_seqnr;
 	bool buffered; /* write stdout and stderr of each task into a file,
 			and print it to stdout once the process ends.
 			this prevents mixing up of the output of multiple tasks. */
@@ -365,7 +366,7 @@ static int syntax(void) {
 		"this program is intended to be used as a recipient of another programs output.\n"
 		"it launches processes to which the current line can be passed as an argument\n"
 		"using {} for substitution (as in find -exec).\n"
-		"if no substitution argument ({} or {.}) is provided, input is piped into\n"
+		"if no input substitution argument ({} or {.}) is provided, input is piped into\n"
 		"stdin of child processes. input will be then evenly distributed to jobs,\n"
 		"until EOF is received. we call this 'pipe mode'.\n"
 		"\n"
@@ -424,8 +425,10 @@ static int syntax(void) {
 		"    everything past -exec is treated as the command to execute on each line of\n"
 		"    stdin received. the line can be passed as an argument using {}.\n"
 		"    {.} passes everything before the last dot in a line as an argument.\n"
+		"    {#} will be replaced with the sequence (aka line) number.\n"
+		"    usage of {#} does not affect the decision whether pipe mode is used.\n"
 		"    it is possible to use multiple substitutions inside a single argument,\n"
-		"    but currently only of one type.\n"
+		"    but only of one type.\n"
 		"    if -exec is omitted, input will merely be dumped to stdout (like cat).\n"
 		"\n"
 	);
@@ -520,7 +523,7 @@ static int parse_args(unsigned argc, char** argv) {
 	if(prog_state.delayedflush && !prog_state.statefile)
 		die("-delayedflush needs -statefile\n");
 
-	prog_state.pipe_mode = 0;
+	prog_state.pipe_mode = 1;
 	prog_state.cmd_startarg = r;
 	prog_state.subst_entries = NULL;
 
@@ -535,12 +538,16 @@ static int parse_args(unsigned argc, char** argv) {
 		// save entries which must be substituted, to save some cycles.
 		for(i = r; i < (unsigned) argc; i++) {
 			subst_ent = i - r;
-			if(strstr(argv[i], "{}") || strstr(argv[i], "{.}")) {
+			char *a, *b, *c=0;
+			if((a = strstr(argv[i], "{}")) ||
+			   (b = strstr(argv[i], "{.}")) ||
+			   (c = strstr(argv[i], "{#}"))) {
+				if(!c) prog_state.pipe_mode = 0;
+				else prog_state.use_seqnr = 1;
 				sblist_add(prog_state.subst_entries, &subst_ent);
 			}
 		}
 		if(sblist_getsize(prog_state.subst_entries) == 0) {
-			prog_state.pipe_mode = 1;
 			sblist_free(prog_state.subst_entries);
 			prog_state.subst_entries = 0;
 		}
@@ -617,7 +624,7 @@ static int str_here(char* haystack, size_t hay_size, size_t bufpos,
 	return 0;
 }
 // returns numbers of substitutions done, -1 on out of buffer.
-// dest is always overwritten. if not substitutions were done, it contains a copy of source.
+// dest is always overwritten. if no substitutions were done, it contains a copy of source.
 static int substitute_all(char *dest, ssize_t dest_size,
 		   char *src, size_t src_size,
 		   char *what, size_t what_size,
@@ -664,7 +671,7 @@ static char* mystrnrchr_chk(const char *in, int ch, size_t end) {
 }
 
 static int need_linecounter(void) {
-	return !!prog_state.skip || prog_state.statefile;
+	return !!prog_state.skip || prog_state.statefile || prog_state.use_seqnr;
 }
 static size_t count_linefeeds(const char *buf, size_t len) {
 	const char *p = buf, *e = buf+len;
@@ -752,6 +759,15 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 						     source, source_len,
 						     "{.}", 3,
 						     line, tilLastDot);
+				if(ret == -1) goto too_long;
+			}
+			if(!ret) {
+				char lineno[32];
+				sprintf(lineno, "%llu", prog_state.lineno);
+				ret = substitute_all(subst_buf[max_subst], 4096,
+						     source, source_len,
+						     "{#}", 3,
+						     lineno, strlen(lineno));
 				if(ret == -1) goto too_long;
 			}
 			if(ret) {
