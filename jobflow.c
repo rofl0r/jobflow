@@ -465,14 +465,14 @@ static int parse_args(unsigned argc, char** argv) {
 	prog_state.numthreads = 1;
 
 	for(i=1; i<argc; ++i) {
-		char *p = argv[i], *q = 0;
+		char *p = argv[i], *q = strchr(p, '=');
 		if(*(p++) != '-') die("expected option instead of %s\n", argv[i]);
 		if(*p == '-') p++;
 		if(!*p) die("invalid option %s\n", argv[i]);
-		for(j=0;j<ARRAY_SIZE(opt_tab);++j,q=0) {
-			if((!p[1] && *p == opt_tab[j].sname) ||
+		for(j=0;j<ARRAY_SIZE(opt_tab);++j) {
+			if(((!p[1] || p[1] == '=') && *p == opt_tab[j].sname) ||
 			   (!strcmp(p, opt_tab[j].lname)) ||
-			   ((q = strchr(p, '=')) && !strncmp(p, opt_tab[j].lname, q-p))) {
+			   (q && strlen(opt_tab[j].lname) == q-p && !strncmp(p, opt_tab[j].lname, q-p))) {
 				switch(opt_tab[j].flag) {
 				case 'b': *opt_tab[j].dest.b=1; break;
 				case 'i': case 's':
