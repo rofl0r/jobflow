@@ -2,6 +2,7 @@
 test -z "$JF" && JF=./jobflow
 TMP=/tmp/jobflow.test.$$
 gcc tests/stdin_printer.c -o tests/stdin_printer.out || { error compiling tests/stdin_printer.c ; exit 1 ; }
+gcc tests/cpuwaster.c -o tests/cpuwaster.out || { error compiling tests/cpuwaster.c ; exit 1 ; }
 tmp() {
 	echo $TMP.$testno
 }
@@ -189,3 +190,6 @@ dotest "random pipe buffered 17x"
 od < /dev/urandom | head -n $RNDLINES > $(tmp).1
 $JF -threads=17 -buffered -exec tests/stdin_printer.out < $(tmp).1 | sort -u > $(tmp).2
 test_equal $(tmp).1 $(tmp).2
+
+dotest "limit cpu 1sec"
+seq 1 | $JF -limits cpu=1 -exec tests/cpuwaster.out 2 && echo "test $testno failed."
