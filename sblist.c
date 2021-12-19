@@ -1,3 +1,8 @@
+/*
+MIT License
+Copyright (C) 2011-2021 rofl0r
+*/
+
 #undef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include "sblist.h"

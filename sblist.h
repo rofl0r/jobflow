@@ -1,3 +1,8 @@
+/*
+MIT License
+Copyright (C) 2011-2021 rofl0r
+*/
+
 #ifndef SBLIST_H
 #define SBLIST_H
 
