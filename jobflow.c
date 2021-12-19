@@ -321,13 +321,14 @@ static void close_pipes(void) {
 }
 
 /* wait till a child exits, reap it, and return its job index for slot reuse */
-static size_t reap_child(void) {
+static size_t reap_child(int *retval) {
 	size_t i;
 	job_info* job;
-	int ret, retval;
+	int ret;
 
-	do ret = waitpid(-1, &retval, 0);
-	while(ret == -1 || !WIFEXITED(retval));
+	do ret = waitpid(-1, retval, 0);
+	while(ret == -1 && errno == EINTR);
+	if(ret == -1) abort();
 
 	for(i = 0; i < sblist_getsize(prog_state.job_infos); i++) {
 		job = sblist_get(prog_state.job_infos, i);
@@ -706,6 +707,11 @@ static void chomp(char *s, size_t *len) {
 	while(*len && islb(s[*len-1])) s[--(*len)] = 0;
 }
 
+static int process_failed(int retval) {
+	return WIFSIGNALED(retval) ||
+	       (WIFEXITED(retval) && WEXITSTATUS(retval));
+}
+
 #define MAX_SUBSTS 16
 static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	char subst_buf[MAX_SUBSTS][4096];
@@ -750,6 +756,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 
 	char *line = inbuf;
 	size_t line_size = len;
+	int ret;
 
 	if(prog_state.subst_entries) {
 		unsigned max_subst = 0;
@@ -758,7 +765,6 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 			if(max_subst >= MAX_SUBSTS) break;
 			char *source = argv[*index + prog_state.cmd_startarg];
 			size_t source_len = strlen(source);
-			int ret;
 			ret = substitute_all(subst_buf[max_subst], 4096,
 					     source, source_len,
 					     "{}", 2,
@@ -799,10 +805,14 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 		spinup_counter++;
 	}
 
+	ret = 1;
 	if(free_slots())
 		launch_job(prog_state.threads_running, prog_state.cmd_argv);
-	else if(!prog_state.pipe_mode)
-		launch_job(reap_child(), prog_state.cmd_argv);
+	else if(!prog_state.pipe_mode) {
+		int retval;
+		launch_job(reap_child(&retval), prog_state.cmd_argv);
+		ret = !process_failed(retval);
+	}
 
 	if(prog_state.statefile && (prog_state.delayedflush == 0 || free_slots() == 0)) {
 		write_statefile(prog_state.lineno, prog_state.temp_state);
@@ -811,7 +821,7 @@ static int dispatch_line(char* inbuf, size_t len, char** argv) {
 	if(prog_state.pipe_mode)
 		pass_stdin(line, line_size);
 
-	return 1;
+	return ret;
 }
 
 int main(int argc, char** argv) {
@@ -921,7 +931,11 @@ int main(int argc, char** argv) {
 	if(prog_state.delayedflush)
 		write_statefile(prog_state.lineno - 1, prog_state.temp_state);
 
-	while(prog_state.threads_running) reap_child();
+	int retval = 0;
+	while(prog_state.threads_running) {
+		reap_child(&retval);
+		if(!exitcode) exitcode = process_failed(retval);
+	}
 
 	if(prog_state.subst_entries) sblist_free(prog_state.subst_entries);
 	if(prog_state.job_infos) sblist_free(prog_state.job_infos);
