@@ -30,6 +30,11 @@ you have a list of things, and a tool that processes a single thing.
 run jobflow without arguments to see a list of possible command line options,
 and argument permutations.
 
+starting from version 1.3.1, jobflow can also be used to extract a range of
+lines, e.g.:
+
+    seq 100 | jobflow -skip 10 -count 10  # print lines 11 to 20
+
 Comparison with GNU parallel
 ----------------------------
 
@@ -69,7 +74,10 @@ available command line options
 
 -skip N
 
-    N=number of entries to skip    
+    N=number of entries to skip
+-count N
+
+    N=only process count lines (after skipping)
 -threads N (alternative: -j N)
 
     N=number of parallel processes to spawn
@@ -97,7 +105,6 @@ available command line options
     spinup.
     this can be handy to circumvent an I/O lockdown because of a burst of
     activity on program startup
-    
 -buffered
 
     store the stdout and stderr of launched processes into a temporary file
